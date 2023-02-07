@@ -432,6 +432,10 @@ public class ExternalDataUtils {
             configuration.put(ExternalDataConstants.KEY_PARSER, ExternalDataConstants.FORMAT_NOOP);
             configuration.put(ExternalDataConstants.KEY_FORMAT, ExternalDataConstants.FORMAT_PARQUET);
         }
+        if(ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat)) {
+            configuration.put(ExternalDataConstants.KEY_PARSER, ExternalDataConstants.FORMAT_NOOP);
+            configuration.put(ExternalDataConstants.KEY_FORMAT, ExternalDataConstants.FORMAT_SHAPE);
+        }
         if (!configuration.containsKey(ExternalDataConstants.KEY_PARSER)
                 && configuration.containsKey(ExternalDataConstants.KEY_FORMAT)) {
             configuration.put(ExternalDataConstants.KEY_PARSER, configuration.get(ExternalDataConstants.KEY_FORMAT));
@@ -760,7 +764,7 @@ public class ExternalDataUtils {
 
     public static boolean supportsPushdown(Map<String, String> properties) {
         //Currently, only Apache Parquet format is supported
-        return isParquetFormat(properties);
+        return isParquetFormat(properties) || isShapefileFormat(properties);
     }
 
     /**
@@ -791,8 +795,18 @@ public class ExternalDataUtils {
                 || ExternalDataConstants.FORMAT_PARQUET.equals(properties.get(ExternalDataConstants.KEY_FORMAT));
     }
 
+    public static boolean isShapefileFormat(Map<String, String> properties) {
+        String inputFormat = properties.get(ExternalDataConstants.KEY_INPUT_FORMAT);
+        return ExternalDataConstants.CLASS_NAME_SHP_INPUT_FORMAT.equals(inputFormat)
+                || ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat);
+    }
     public static void setExternalDataProjectionInfo(DataProjectionInfo projectionInfo, Map<String, String> properties)
             throws IOException {
+        if(properties.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)){
+            String[] fields = projectionInfo.getProjectionInfo().getFieldNames();
+            properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS, String.join(",", fields));
+            return;
+        }
         properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS,
                 serializeExpectedTypeToString(projectionInfo.getProjectionInfo()));
         properties.put(ExternalDataConstants.KEY_HADOOP_ASTERIX_FUNCTION_CALL_INFORMATION,

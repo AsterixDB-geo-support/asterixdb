@@ -37,6 +37,7 @@ import org.apache.asterix.external.dataflow.AbstractFeedDataFlowController;
 import org.apache.asterix.external.dataset.adapter.FeedAdapter;
 import org.apache.asterix.external.dataset.adapter.GenericAdapter;
 import org.apache.asterix.external.indexing.ExternalFile;
+import org.apache.asterix.external.input.HDFSDataSourceFactory;
 import org.apache.asterix.external.parser.factory.ADMDataParserFactory;
 import org.apache.asterix.external.provider.DataflowControllerProvider;
 import org.apache.asterix.external.provider.DatasourceFactoryProvider;
@@ -149,6 +150,11 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
         dataSourceFactory = createExternalDataSourceFactory(configuration);
         if (dataSourceFactory.isIndexible() && (files != null)) {
             ((IIndexibleExternalDataSource) dataSourceFactory).setSnapshot(files, indexingOp);
+        }
+        if(configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
+            if(dataSourceFactory instanceof HDFSDataSourceFactory) {
+                ((HDFSDataSourceFactory)dataSourceFactory).setRecordType(recordType);
+            }
         }
         dataSourceFactory.configure(serviceContext, configuration, warningCollector);
         ExternalDataUtils.validateDataParserParameters(configuration);

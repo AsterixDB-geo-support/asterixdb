@@ -128,6 +128,7 @@ public class ExternalDataConstants {
     public static final String KEY_REDACT_WARNINGS = "redact-warnings";
     public static final String KEY_REQUESTED_FIELDS = "requested-fields";
     public static final String KEY_EXTERNAL_SCAN_BUFFER_SIZE = "external-scan-buffer-size";
+    public static final String KEY_FILTER_PUSHDOWN_MBR = "filter-mbr";
 
     /**
      * Keys for adapter name
@@ -153,6 +154,8 @@ public class ExternalDataConstants {
     public static final String CLASS_NAME_SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
     public static final String CLASS_NAME_PARQUET_INPUT_FORMAT =
             "org.apache.asterix.external.input.record.reader.hdfs.parquet.MapredParquetInputFormat";
+    public static final String CLASS_NAME_SHP_INPUT_FORMAT =
+            "org.apache.asterix.external.input.record.reader.hdfs.shapeFile.OGCGeometryInputFormat";
     public static final String CLASS_NAME_HDFS_FILESYSTEM = "org.apache.hadoop.hdfs.DistributedFileSystem";
     /**
      * input formats aliases
@@ -160,6 +163,7 @@ public class ExternalDataConstants {
     public static final String INPUT_FORMAT_TEXT = "text-input-format";
     public static final String INPUT_FORMAT_SEQUENCE = "sequence-input-format";
     public static final String INPUT_FORMAT_PARQUET = "parquet-input-format";
+    public static final String INPUT_FORMAT_SHAPE = "shapefile";
     /**
      * Builtin streams
      */
@@ -196,6 +200,7 @@ public class ExternalDataConstants {
     public static final String FORMAT_CSV = "csv";
     public static final String FORMAT_TSV = "tsv";
     public static final String FORMAT_PARQUET = "parquet";
+    public static final String FORMAT_SHAPE = "shp";
     public static final Set<String> ALL_FORMATS;
 
     static {
@@ -213,6 +218,7 @@ public class ExternalDataConstants {
         formats.add(FORMAT_CSV);
         formats.add(FORMAT_TSV);
         formats.add(FORMAT_PARQUET);
+        formats.add(FORMAT_SHAPE);
         ALL_FORMATS = Collections.unmodifiableSet(formats);
     }
 

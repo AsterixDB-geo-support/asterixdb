@@ -186,6 +186,8 @@ public class HDFSUtils {
                 return ExternalDataConstants.CLASS_NAME_SEQUENCE_INPUT_FORMAT;
             case ExternalDataConstants.INPUT_FORMAT_PARQUET:
                 return ExternalDataConstants.CLASS_NAME_PARQUET_INPUT_FORMAT;
+            case ExternalDataConstants.INPUT_FORMAT_SHAPE:
+                return ExternalDataConstants.CLASS_NAME_SHP_INPUT_FORMAT;
             default:
                 return inputFormatParameter;
         }
