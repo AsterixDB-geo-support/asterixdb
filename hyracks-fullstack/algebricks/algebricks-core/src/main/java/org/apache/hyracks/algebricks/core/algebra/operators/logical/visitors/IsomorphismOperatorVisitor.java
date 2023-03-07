@@ -35,6 +35,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.ILogicalOperator;
 import org.apache.hyracks.algebricks.core.algebra.base.ILogicalPlan;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalOperatorTag;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
+import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSource;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractLogicalOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
@@ -251,8 +252,8 @@ public class IsomorphismOperatorVisitor implements ILogicalOperatorVisitor<Boole
             return Boolean.FALSE;
         }
         OrderOperator orderOpArg = (OrderOperator) copyAndSubstituteVar(op, arg);
-        boolean isomorphic = compareIOrderAndExpressions(op.getOrderExpressions(), orderOpArg.getOrderExpressions());
-        return isomorphic;
+        return op.getTopK() == orderOpArg.getTopK()
+                && compareIOrderAndExpressions(op.getOrderExpressions(), orderOpArg.getOrderExpressions());
     }
 
     @Override
@@ -482,6 +483,12 @@ public class IsomorphismOperatorVisitor implements ILogicalOperatorVisitor<Boole
                 && Objects.equals(op.getProjectionInfo(), argScan.getProjectionInfo());
 
         if (!isomorphic) {
+            return Boolean.FALSE;
+        }
+        IDataSource<?> dataSource = op.getDataSource();
+        IDataSource<?> argDataSource = argScan.getDataSource();
+        if (dataSource.compareProperties() && argDataSource.compareProperties()
+                && !Objects.equals(dataSource.getProperties(), argDataSource.getProperties())) {
             return Boolean.FALSE;
         }
         DataSourceScanOperator scanOpArg = (DataSourceScanOperator) copyAndSubstituteVar(op, arg);
