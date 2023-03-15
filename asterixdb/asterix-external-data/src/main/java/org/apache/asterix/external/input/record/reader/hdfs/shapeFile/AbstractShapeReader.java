@@ -25,7 +25,12 @@ import org.apache.asterix.external.parser.AbstractDataParser;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.*;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.FileSplit;
+import org.apache.hadoop.mapred.Reporter;
+import org.apache.hadoop.mapred.RecordReader;
+import org.apache.hadoop.mapred.InputSplit;
+
 import org.apache.hyracks.data.std.api.IValueReference;
 
 import java.io.IOException;
@@ -46,7 +51,7 @@ public abstract class AbstractShapeReader<T extends IValueReference> extends Abs
 
     public AbstractShapeReader(InputSplit inputSplit, JobConf conf, Reporter reporter, String requestedFields,
             String filterMBRInfo) throws IOException {
-        //System.out.println(inputSplit instanceof FileSplit);
+        //
         if (inputSplit instanceof FileSplit) {
             if (requestedFields == null || requestedFields.equals("")) {
                 readGeometryField = true;

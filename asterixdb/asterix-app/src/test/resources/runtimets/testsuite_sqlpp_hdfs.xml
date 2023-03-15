@@ -130,6 +130,11 @@
         <output-dir compare="Text">parquet</output-dir>
       </compilation-unit>
     </test-case>
+    <test-case FilePath="hdfs">
+      <compilation-unit name="shapefile">
+        <output-dir compare="Text">shapefile</output-dir>
+      </compilation-unit>
+    </test-case>
   </test-group>
   <test-group name="external-indexing">
     <test-case FilePath="external-indexing">

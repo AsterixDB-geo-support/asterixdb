@@ -33,10 +33,7 @@ import java.io.Serializable;
  */
 public class ShpReader implements Serializable {
     private transient DataInputStream m_dataInputStream;
-    public transient ShpHeader m_shpHeader;
-
-    private transient int m_parts[] = new int[4];
-
+    private transient ShpHeader m_shpHeader;
     private transient int recordNumber;
     private transient int contentLength;
     private transient int contentLengthInBytes;
@@ -50,10 +47,9 @@ public class ShpReader implements Serializable {
     private transient int numParts;
     private transient int numPoints;
     protected boolean isFilterMBRPushdown;
-
     public ShpReader(final DataInputStream dataInputStream, String filterMBRInfo) throws IOException {
         m_dataInputStream = dataInputStream;
-        m_shpHeader = new ShpHeader(dataInputStream);
+        m_shpHeader = new ShpHeader(m_dataInputStream);
         if (filterMBRInfo != null) {
             isFilterMBRPushdown = true;
             String[] coordinates = filterMBRInfo.split(",");
@@ -61,8 +57,10 @@ public class ShpReader implements Serializable {
             filterYmin = Double.parseDouble(coordinates[1]);
             filterXmax = Double.parseDouble(coordinates[2]);
             filterYmax = Double.parseDouble(coordinates[3]);
+            // Check whether the query filter MBR overlaps the MBR of the whole file geometry.
             if (!m_shpHeader.isOverlapped(filterXmin, filterYmin, filterXmax, filterYmax)) {
-                m_dataInputStream.skipBytes((m_shpHeader.fileLength * 2) - 100);
+                //skip the whole file
+                m_dataInputStream.skipBytes((m_shpHeader.getFileLength() * 2) - 100);
             }
         }
     }
@@ -72,12 +70,18 @@ public class ShpReader implements Serializable {
     }
 
     public boolean hasMore() throws IOException {
-        return m_dataInputStream.available() > 0;
+        //checked if any byte is available to read or not.
+        return m_dataInputStream.read() != -1;
     }
 
     public void readRecordHeader() throws IOException {
-        recordNumber = m_dataInputStream.readInt();
+        //First byte of the record header is already read during hasMore(), the remaining three bytes of record number
+        //data is read in a dummy buffer.
+        byte[] buffer = new byte[3];
+        m_dataInputStream.readFully(buffer);
         contentLength = m_dataInputStream.readInt();
+        //contentLength is stored in shapefile as 16-bit words. So need to multiply by two to get the length in byte
+        //minus 4 because each record content starts with 4 byte shapeType. So actual data content is after this 4 bytes.
         contentLengthInBytes = contentLength + contentLength - 4;
         //contentLengthInBytes = contentLength + contentLength;
         shapeType = EndianUtils.readSwappedInteger(m_dataInputStream);
@@ -87,9 +91,12 @@ public class ShpReader implements Serializable {
         Point point = new Point();
         point.setX(EndianUtils.readSwappedDouble(m_dataInputStream));
         point.setY(EndianUtils.readSwappedDouble(m_dataInputStream));
+        //shape type: PointM
         if (shapeType == 21) {
             point.setM(EndianUtils.readSwappedDouble(m_dataInputStream));
-        } else if (shapeType == 11) {
+        }
+        //shape type: PointZ
+        else if (shapeType == 11) {
             point.setZ(EndianUtils.readSwappedDouble(m_dataInputStream));
             point.setM(EndianUtils.readSwappedDouble(m_dataInputStream));
 
@@ -105,6 +112,8 @@ public class ShpReader implements Serializable {
         double xmax = EndianUtils.readSwappedDouble(m_dataInputStream);
         double ymax = EndianUtils.readSwappedDouble(m_dataInputStream);
 
+        /*if minimum bounding rectangle of the record polygon does not overlap with the given filter MBR
+        we are going to skip the entire record geometry*/
         if (isFilterMBRPushdown) {
             if (!isOverlapped(xmin, ymin, xmax, ymax)) {
                 m_dataInputStream.skipBytes(contentLengthInBytes - 32);
@@ -113,11 +122,7 @@ public class ShpReader implements Serializable {
         }
         numParts = EndianUtils.readSwappedInteger(m_dataInputStream);
         numPoints = EndianUtils.readSwappedInteger(m_dataInputStream);
-        //int[] m_parts = new int[numParts+1];
-
-        if ((numParts + 1) > m_parts.length) {
-            m_parts = new int[numParts + 1];
-        }
+        int[] m_parts = new int[numParts+1];
         for (int p = 0; p < numParts; p++) {
             m_parts[p] = EndianUtils.readSwappedInteger(m_dataInputStream);
         }
@@ -128,6 +133,7 @@ public class ShpReader implements Serializable {
             final double y = EndianUtils.readSwappedDouble(m_dataInputStream);
             points[i] = new Point(x, y);
         }
+        //shape type: PolygonZ
         if (shapeType == 15) {
             double zMin = EndianUtils.readSwappedDouble(m_dataInputStream);
             double zMax = EndianUtils.readSwappedDouble(m_dataInputStream);
@@ -135,6 +141,8 @@ public class ShpReader implements Serializable {
                 final double z = EndianUtils.readSwappedDouble(m_dataInputStream);
                 points[i].setZ(z);
             }
+            //The following part is optional in the record. So need to check whether the content contains more data or not.
+            //we have contentLengthInBytes from record header, we use that to compare with the length of the bytes read so far.
             if (contentLengthInBytes > (40 + numParts * 4 + numPoints * 16 + 16 + numPoints * 8)) {
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
@@ -144,7 +152,8 @@ public class ShpReader implements Serializable {
                 }
             }
         }
-        if (shapeType == 25) { //MultiPointM
+        //case: Polygon M
+        if (shapeType == 25) {
             if (contentLengthInBytes > (40 + numParts * 4 + numPoints * 16)) {
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
@@ -173,7 +182,8 @@ public class ShpReader implements Serializable {
         double ymin = EndianUtils.readSwappedDouble(m_dataInputStream);
         double xmax = EndianUtils.readSwappedDouble(m_dataInputStream);
         double ymax = EndianUtils.readSwappedDouble(m_dataInputStream);
-
+        /*if minimum bounding rectangle of the record polyline does not overlap with the given filter MBR
+        we are going to skip the entire record geometry*/
         if (isFilterMBRPushdown) {
             if (!isOverlapped(xmin, ymin, xmax, ymax)) {
                 m_dataInputStream.skipBytes(contentLengthInBytes - 32);
@@ -182,11 +192,7 @@ public class ShpReader implements Serializable {
         }
         numParts = EndianUtils.readSwappedInteger(m_dataInputStream);
         numPoints = EndianUtils.readSwappedInteger(m_dataInputStream);
-        m_parts = new int[numParts + 1];
-
-        if ((numParts + 1) > m_parts.length) {
-            m_parts = new int[numParts + 1];
-        }
+        int[] m_parts = new int[numParts + 1];
         for (int p = 0; p < numParts; p++) {
             m_parts[p] = EndianUtils.readSwappedInteger(m_dataInputStream);
         }
@@ -204,6 +210,8 @@ public class ShpReader implements Serializable {
                 final double z = EndianUtils.readSwappedDouble(m_dataInputStream);
                 points[i].setZ(z);
             }
+            //The following part is optional in the record. So need to check whether the content contains more data or not.
+            //we have contentLengthInBytes from record header, we use that to compare with the length of the bytes read so far.
             if (contentLengthInBytes > (40 + numParts * 4 + numPoints * 16 + 16 + numPoints * 8)) {
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
@@ -213,7 +221,7 @@ public class ShpReader implements Serializable {
                 }
             }
         }
-        if (shapeType == 23) { //MultiPointM
+        if (shapeType == 23) { //PolyLineM
             if (contentLengthInBytes > (40 + numParts * 4 + numPoints * 16)) {
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
@@ -231,7 +239,6 @@ public class ShpReader implements Serializable {
                 polyLine.lineTo(points[j]);
             }
         }
-        polyLine.closeAllPaths();
         return true;
     }
 
@@ -242,6 +249,8 @@ public class ShpReader implements Serializable {
         double xmax = EndianUtils.readSwappedDouble(m_dataInputStream);
         double ymax = EndianUtils.readSwappedDouble(m_dataInputStream);
 
+        /*if minimum bounding rectangle of the record multipoint does not overlap with the given filter MBR
+        we are going to skip the entire record geometry*/
         if (isFilterMBRPushdown) {
             if (!isOverlapped(xmin, ymin, xmax, ymax)) {
                 m_dataInputStream.skipBytes(contentLengthInBytes - 32);
@@ -251,19 +260,21 @@ public class ShpReader implements Serializable {
 
         numPoints = EndianUtils.readSwappedInteger(m_dataInputStream);
         Point[] points = new Point[numPoints];
-        double[] mValues = new double[numPoints];
         for (int i = 0; i < numPoints; i++) {
             final double x = EndianUtils.readSwappedDouble(m_dataInputStream);
             final double y = EndianUtils.readSwappedDouble(m_dataInputStream);
             points[i] = new Point(x, y);
         }
-        if (shapeType == 18) { //MultiPointZ
+        //shape type: MultiPointZ
+        if (shapeType == 18) {
             double zMin = EndianUtils.readSwappedDouble(m_dataInputStream);
             double zMax = EndianUtils.readSwappedDouble(m_dataInputStream);
             for (int i = 0; i < numPoints; i++) {
                 final double z = EndianUtils.readSwappedDouble(m_dataInputStream);
                 points[i].setZ(z);
             }
+            //The following part is optional in the record. So need to check whether the content contains more data or not.
+            //we have contentLengthInBytes from record header, we use that to compare with the length of the bytes read so far.
             if (contentLengthInBytes > (36 + numPoints * 16 + 16 + numPoints * 8)) {
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
@@ -274,7 +285,7 @@ public class ShpReader implements Serializable {
             }
         }
         if (shapeType == 28) { //MultiPointM
-            if (contentLengthInBytes > (36 + numPoints * 16)) {
+            if (contentLengthInBytes > (36 + numPoints * 16)) {   //the M measure can be optional
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
                 for (int i = 0; i < numPoints; i++) {

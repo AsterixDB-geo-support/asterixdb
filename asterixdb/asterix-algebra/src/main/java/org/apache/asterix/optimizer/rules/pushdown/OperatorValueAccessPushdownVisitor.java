@@ -18,12 +18,16 @@
  */
 package org.apache.asterix.optimizer.rules.pushdown;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
+import com.esri.core.geometry.Envelope;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.metadata.DataverseName;
 import org.apache.asterix.external.util.ExternalDataUtils;
@@ -32,8 +36,13 @@ import org.apache.asterix.metadata.declared.DatasetDataSource;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Dataset;
 import org.apache.asterix.metadata.entities.ExternalDatasetDetails;
+import org.apache.asterix.om.base.AGeometry;
+import org.apache.asterix.om.base.IAObject;
+import org.apache.asterix.om.constants.AsterixConstantValue;
 import org.apache.asterix.om.functions.BuiltinFunctions;
+import org.apache.asterix.optimizer.base.AsterixOptimizationContext;
 import org.apache.asterix.optimizer.rules.pushdown.schema.RootExpectedSchemaNode;
+import org.apache.asterix.runtime.projection.DataProjectionInfo;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.core.algebra.base.ILogicalExpression;
@@ -44,6 +53,9 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalExpressionTag;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalOperatorTag;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCallExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.IAlgebricksConstantValue;
+import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
@@ -84,6 +96,8 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteOperato
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteResultOperator;
 import org.apache.hyracks.algebricks.core.algebra.visitors.ILogicalOperatorVisitor;
 
+import javax.xml.crypto.Data;
+
 /**
  * This visitor visits the entire plan and tries to build the information of the required values from all dataset
  */
@@ -98,18 +112,28 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
     private final Map<LogicalVariable, DataSourceScanOperator> registeredDatasets;
     //visitedOperators so we do not visit the same operator twice (in case of REPLICATE)
     private final Set<ILogicalOperator> visitedOperators;
-
+    //coordinates of bounding box of the filter for shapefile dataset
+    private boolean hasFilterPushdown;
+    private double xMin;
+    private double yMin;
+    private double xMax;
+    private double yMax;
     public OperatorValueAccessPushdownVisitor(IOptimizationContext context) {
         this.context = context;
         builder = new ExpectedSchemaBuilder();
         registeredDatasets = new HashMap<>();
         pushdownVisitor = new ExpressionValueAccessPushdownVisitor(builder);
         visitedOperators = new HashSet<>();
+        hasFilterPushdown = false;
     }
 
     public void finish() {
         for (Map.Entry<LogicalVariable, DataSourceScanOperator> scan : registeredDatasets.entrySet()) {
             scan.getValue().setProjectionInfo(builder.createProjectionInfo(scan.getKey()));
+            if (hasFilterPushdown) {
+                DataProjectionInfo projectionInfo = (DataProjectionInfo) scan.getValue().getProjectionInfo();
+                projectionInfo.setFilterMBR(xMin, yMin, xMax, yMax);
+            }
         }
     }
 
@@ -280,6 +304,54 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
     @Override
     public Void visitSelectOperator(SelectOperator op, Void arg) throws AlgebricksException {
         visitInputs(op);
+        if (isShapeFileFormat()) {
+            ArrayList<String> acceptedFunctionNames = new ArrayList<String>(Arrays.asList("st-intersects",
+                    "st-contains", "st-crosses", "st-equals", "st-overlaps", "st-touches", "st-within"));
+            ILogicalExpression logicalExpression = op.getCondition().getValue();
+            if (logicalExpression instanceof ScalarFunctionCallExpression) {
+                ScalarFunctionCallExpression predicateExpression = null;
+                String functionName =
+                        ((ScalarFunctionCallExpression) logicalExpression).getFunctionIdentifier().getName();
+                if (functionName.equals("and")) {
+                    List<Mutable<ILogicalExpression>> arguments =
+                            ((ScalarFunctionCallExpression) logicalExpression).getArguments();
+                    for (Mutable<ILogicalExpression> e : arguments) {
+                        ILogicalExpression argument = e.getValue();
+                        if (argument instanceof ScalarFunctionCallExpression) {
+                            if (acceptedFunctionNames.contains(
+                                    ((ScalarFunctionCallExpression) argument).getFunctionIdentifier().getName())) {
+                                predicateExpression = (ScalarFunctionCallExpression) argument;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    if (acceptedFunctionNames.contains(functionName))
+                        predicateExpression = (ScalarFunctionCallExpression) logicalExpression;
+                }
+                if (predicateExpression != null) {
+                    List<Mutable<ILogicalExpression>> arguments = predicateExpression.getArguments();
+                    for (Mutable<ILogicalExpression> e : arguments) {
+                        ILogicalExpression argument = e.getValue();
+                        if (argument instanceof ConstantExpression) {
+                            IAlgebricksConstantValue value = ((ConstantExpression) argument).getValue();
+                            if (value instanceof AsterixConstantValue) {
+                                IAObject constantObject = ((AsterixConstantValue) value).getObject();
+                                if (constantObject instanceof AGeometry) {
+                                    hasFilterPushdown = true;
+                                    Envelope record = new Envelope();
+                                    ((AGeometry) constantObject).getGeometry().getEsriGeometry().queryEnvelope(record);
+                                    xMin = record.getXMin();
+                                    yMin = record.getYMin();
+                                    xMax = record.getXMax();
+                                    yMax = record.getYMax();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return null;
     }
 
@@ -480,5 +552,21 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
 
     private void visitInputs(ILogicalOperator op) throws AlgebricksException {
         visitInputs(op, null);
+    }
+    private boolean isShapeFileFormat() throws AlgebricksException {
+        ObjectSet<Int2ObjectMap.Entry<Set<DataSource>>> entrySet =
+                ((AsterixOptimizationContext) context).getDataSourceMap().int2ObjectEntrySet();
+        MetadataProvider metadataProvider = (MetadataProvider) context.getMetadataProvider();
+        for (Int2ObjectMap.Entry<Set<DataSource>> dataSources : entrySet) {
+            for (DataSource dataSource : dataSources.getValue()) {
+                DataverseName dataverse = dataSource.getId().getDataverseName();
+                String dataSetName = dataSource.getId().getDatasourceName();
+                Dataset dataset = metadataProvider.findDataset(dataverse, dataSetName);
+                if (ExternalDataUtils.isShapefileFormat(((ExternalDatasetDetails) dataset.getDatasetDetails()).getProperties())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

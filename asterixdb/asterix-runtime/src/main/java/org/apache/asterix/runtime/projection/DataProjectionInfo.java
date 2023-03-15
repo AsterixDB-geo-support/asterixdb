@@ -39,10 +39,12 @@ public class DataProjectionInfo implements IProjectionInfo<ARecordType> {
 
     private final ARecordType root;
     private final Map<String, FunctionCallInformation> functionCallInfoMap;
-
+    //For shapefile scan, information about MBR of the filter condition geometry
+    private String filterMBR;
     public DataProjectionInfo(ARecordType root, Map<String, FunctionCallInformation> sourceInformationMap) {
         this.root = root;
         this.functionCallInfoMap = sourceInformationMap;
+        this.filterMBR = null;
     }
 
     private DataProjectionInfo(DataProjectionInfo other) {
@@ -155,5 +157,11 @@ public class DataProjectionInfo implements IProjectionInfo<ARecordType> {
 
     private static ARecordType createType(String typeName) {
         return new ARecordType(typeName, new String[] {}, new IAType[] {}, true);
+    }
+    public void setFilterMBR(double xMin, double yMin, double xMax, double yMax){
+        filterMBR = xMin + "," + yMin + "," + xMax + "," + yMax;
+    }
+    public String getFilterMBR(){
+        return filterMBR;
     }
 }

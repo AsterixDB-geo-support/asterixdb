@@ -22,16 +22,19 @@ import com.esri.core.geometry.MultiPoint;
 import com.esri.core.geometry.Polygon;
 import com.esri.core.geometry.Polyline;
 import com.esri.core.geometry.SpatialReference;
-import com.esri.core.geometry.ogc.*;
+import com.esri.core.geometry.ogc.OGCGeometry;
+import com.esri.core.geometry.ogc.OGCLineString;
+import com.esri.core.geometry.ogc.OGCMultiLineString;
+import com.esri.core.geometry.ogc.OGCMultiPoint;
+import com.esri.core.geometry.ogc.OGCMultiPolygon;
+import com.esri.core.geometry.ogc.OGCPoint;
+import com.esri.core.geometry.ogc.OGCPolygon;
 import org.apache.asterix.builders.RecordBuilder;
 import org.apache.asterix.external.api.IDataParser;
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport.DBFField;
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport.DBFType;
 import org.apache.asterix.formats.nontagged.SerializerDeserializerProvider;
-import org.apache.asterix.om.base.ABoolean;
-import org.apache.asterix.om.base.AGeometry;
-import org.apache.asterix.om.base.AMutableString;
-import org.apache.asterix.om.base.ANull;
+import org.apache.asterix.om.base.*;
 import org.apache.asterix.om.base.temporal.GregorianCalendarSystem;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.asterix.om.types.BuiltinType;
@@ -90,8 +93,11 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
 
         @Override
         public boolean next(Void key, VoidPointable value) throws IOException {
+            //initialize a record builder which will be used to parse record of the shapefile in ADM format.
             builder.init();
             builder.reset(this.recordType);
+            //if the query select count(*), we do not read the shp file, we can get the record counts from the index file(.shx)
+            //index(.shx) file contains record offset for each record of the corresponding shape(.shp) file
             if (readShxFile) {
                 boolean hasMore = m_shxReader.hasMore();
                 if (!hasMore)
@@ -109,11 +115,8 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                 return true;
             }
             if (readGeometryField) {
-                boolean hasMore = m_shpReader.hasMore();
-                if (!hasMore)
+                if(!m_shpReader.hasMore())
                     return false;
-                //m_shpReader.queryPoint();
-
                 int fieldIndex;
                 boolean hasReadFully = true;
 
@@ -168,12 +171,12 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                 if (hasReadFully) {
                     String fieldName = "g";
                     fieldIndex = recordType.getFieldIndex(fieldName);
-
                     ArrayBackedValueStorage valueBuffer = new ArrayBackedValueStorage();
-                    ISerializerDeserializer<AGeometry> gSerde =
+                    ISerializerDeserializer<AMutableGeometry> gSerde =
                             SerializerDeserializerProvider.INSTANCE.getSerializerDeserializer(BuiltinType.AGEOMETRY);
-                    aGeomtry.setValue(geometry);
-                    IDataParser.toBytes(aGeomtry, valueBuffer, gSerde);
+                    //aGeomtry.setValue(geometry);
+                    AMutableGeometry aGeom = new AMutableGeometry(geometry);
+                    IDataParser.toBytes(aGeom, valueBuffer, gSerde);
 
                     if (fieldIndex < 0) {
                         //field is not defined and the type is open
@@ -190,8 +193,10 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                             throw new IllegalStateException("Defined type and Parsed Type do not match");
                     }
                 } else {
-                    m_dbfReader.skipBytes(m_dbfReader.getRecordLength());
+                    //if geometry field is not read from the shapefile, the corresponding DBF record need to be skipped
+                    if(readDBFFields) m_dbfReader.skipBytes(m_dbfReader.getRecordLength());
                     ArrayBackedValueStorage valueContainer = new ArrayBackedValueStorage();
+                    //set the record as NULL
                     IDataParser.toBytes(ANull.NULL, valueContainer, nullSerde);
                     value.set(valueContainer);
                     return true;
@@ -289,7 +294,9 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
 
                         }
                     }
-                    if (m_dbfReader.getRecordLength() > m_dbfReader.getTotalFieldLength()) {
+                    //Sometimes DBF files contain padded dirty data at the end of actual record
+                    //so need to check to skip those bytes
+                    if (m_dbfReader.getRecordLength() > (m_dbfReader.getTotalFieldLength() + 1)) {
                         m_dbfReader.skipBytes(m_dbfReader.getRecordLength() - m_dbfReader.getTotalFieldLength() - 1);
                     }
                 } else {
@@ -424,7 +431,6 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
         public long getPos() throws IOException {
             return (long) getProgress();
         }
-
     }
 
 }

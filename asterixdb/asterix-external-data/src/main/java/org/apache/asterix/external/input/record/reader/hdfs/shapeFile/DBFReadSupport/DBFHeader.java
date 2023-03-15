@@ -31,12 +31,12 @@ import java.util.List;
 public class DBFHeader implements Serializable {
 
     private byte signature; /* 0     */
-    public byte year; /* 1     */
-    public byte month; /* 2     */
-    public byte day; /* 3     */
-    public int numberOfRecords; /* 4-7   */
-    public short headerLength; /* 8-9   */
-    public short recordLength; /* 10-11 */
+    private byte year; /* 1     */
+    private byte month; /* 2     */
+    private byte day; /* 3     */
+    private int numberOfRecords; /* 4-7   */
+    private short headerLength; /* 8-9   */
+    private short recordLength; /* 10-11 */
     private short reserved1; /* 12-13 */
     private byte incompleteTransaction; /* 14    */
     private byte encryptionFlag; /* 15    */
@@ -46,45 +46,59 @@ public class DBFHeader implements Serializable {
     private byte mdxFlag; /* 28    */
     private byte languageDriver; /* 29    */
     private short reserved4; /* 30-31 */
-    public List<DBFField> fields; /* each 32 bytes */
-    public int numberOfFields;
-    public int totalFieldLengthInBytes;
+    private List<DBFField> fields; /* each 32 bytes */
+    private final int numberOfFields;
+    private int totalFieldLengthInBytes;
+    public DBFHeader(final DataInputStream dataInput) throws IOException {
+        this.signature = dataInput.readByte(); /* 0     */
+        this.year = dataInput.readByte(); /* 1     */
+        this.month = dataInput.readByte(); /* 2     */
+        this.day = dataInput.readByte(); /* 3     */
+        this.numberOfRecords = EndianUtils.readSwappedInteger(dataInput);  /* 4-7   */
 
-    public static DBFHeader read(final DataInputStream dataInput) throws IOException {
-        final DBFHeader header = new DBFHeader();
+        this.headerLength = EndianUtils.readSwappedShort(dataInput);   /* 8-9   */
+        this.recordLength = EndianUtils.readSwappedShort(dataInput);  /* 10-11 */
 
-        header.signature = dataInput.readByte(); /* 0     */
-        header.year = dataInput.readByte(); /* 1     */
-        header.month = dataInput.readByte(); /* 2     */
-        header.day = dataInput.readByte(); /* 3     */
-        header.numberOfRecords = EndianUtils.readSwappedInteger(dataInput); //DbfUtils.readLittleEndianInt(dataInput);  /* 4-7   */
+        this.reserved1 = dataInput.readShort();     /* 12-13 */
+        this.incompleteTransaction = dataInput.readByte(); /* 14    */
+        this.encryptionFlag = dataInput.readByte(); /* 15    */
+        this.freeRecordThread = dataInput.readInt(); /* 16-19 */
+        this.reserved2 = dataInput.readInt(); /* 20-23 */
+        this.reserved3 = dataInput.readInt(); /* 24-27 */
+        this.mdxFlag = dataInput.readByte(); /* 28    */
+        this.languageDriver = dataInput.readByte(); /* 29    */
+        this.reserved4 = dataInput.readShort();       /* 30-31 */
 
-        header.headerLength = EndianUtils.readSwappedShort(dataInput);//DbfUtils.readLittleEndianShort(dataInput);   /* 8-9   */
-        header.recordLength = EndianUtils.readSwappedShort(dataInput);//DbfUtils.readLittleEndianShort(dataInput);   /* 10-11 */
-
-        header.reserved1 = dataInput.readShort();//DbfUtils.readLittleEndianShort(dataInput);        /* 12-13 */
-        header.incompleteTransaction = dataInput.readByte(); /* 14    */
-        header.encryptionFlag = dataInput.readByte(); /* 15    */
-        header.freeRecordThread = dataInput.readInt();//DbfUtils.readLittleEndianInt(dataInput); /* 16-19 */
-        header.reserved2 = dataInput.readInt(); /* 20-23 */
-        header.reserved3 = dataInput.readInt(); /* 24-27 */
-        header.mdxFlag = dataInput.readByte(); /* 28    */
-        header.languageDriver = dataInput.readByte(); /* 29    */
-        header.reserved4 = dataInput.readShort();//DbfUtils.readLittleEndianShort(dataInput);        /* 30-31 */
-
-        header.fields = new ArrayList<DBFField>();
+        this.fields = new ArrayList<DBFField>();
         DBFField field;
         int totalFieldLegth = 0;
         while ((field = DBFField.read(dataInput)) != null) {
-            header.fields.add(field);
+            fields.add(field);
             totalFieldLegth += field.getFieldLength();
         }
-        header.numberOfFields = header.fields.size();
-        header.totalFieldLengthInBytes = totalFieldLegth;
-        return header;
+        this.numberOfFields = this.fields.size();
+        this.totalFieldLengthInBytes = totalFieldLegth;
     }
-
     public DBFField getField(final int i) {
         return fields.get(i);
+    }
+
+    public int getNumberOfRecords() {
+        return numberOfRecords;
+    }
+
+    public short getRecordLength() {
+        return recordLength;
+    }
+
+    public int getNumberOfFields() {
+        return numberOfFields;
+    }
+
+    public int getTotalFieldLengthInBytes() {
+        return totalFieldLengthInBytes;
+    }
+    public List<DBFField> getFields(){
+        return this.fields;
     }
 }

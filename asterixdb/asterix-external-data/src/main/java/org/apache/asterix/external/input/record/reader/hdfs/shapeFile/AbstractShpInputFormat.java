@@ -49,6 +49,7 @@ abstract class AbstractShpInputFormat<T extends IValueReference>
 
     @Override
     protected boolean isSplitable(FileSystem fs, Path filename) {
+        //We are not considering splitting shapefile. To-do: create support for shapefile spilit.
         return false;
     }
 

@@ -27,17 +27,17 @@ import java.io.Serializable;
 /**
  */
 public class ShpHeader implements Serializable {
-    public transient int fileLength;
-    public transient int version;
-    public transient int shapeType;
-    public transient double xmin;
-    public transient double ymin;
-    public transient double xmax;
-    public transient double ymax;
-    public transient double zmin;
-    public transient double zmax;
-    public transient double mmin;
-    public transient double mmax;
+    private transient int fileLength;
+    private transient int version;
+    private transient int shapeType;
+    private transient double xmin;
+    private transient double ymin;
+    private transient double xmax;
+    private transient double ymax;
+    private transient double zmin;
+    private transient double zmax;
+    private transient double mmin;
+    private transient double mmax;
 
     public ShpHeader(final DataInputStream dataInputStream) throws IOException {
         final int signature = dataInputStream.readInt();
@@ -66,4 +66,7 @@ public class ShpHeader implements Serializable {
         return !(xmin > this.xmax) && !(this.xmin > xmax) && !(ymin > this.ymax) && !(this.ymin > ymax);
     }
 
+    public int getFileLength() {
+        return fileLength;
+    }
 }
