@@ -427,7 +427,7 @@ public class ExternalDataUtils {
             configuration.put(ExternalDataConstants.KEY_PARSER, ExternalDataConstants.FORMAT_NOOP);
             configuration.put(ExternalDataConstants.KEY_FORMAT, ExternalDataConstants.FORMAT_PARQUET);
         }
-        if(ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat)) {
+        if (ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat)) {
             configuration.put(ExternalDataConstants.KEY_PARSER, ExternalDataConstants.FORMAT_NOOP);
             configuration.put(ExternalDataConstants.KEY_FORMAT, ExternalDataConstants.FORMAT_SHAPE);
         }
@@ -813,14 +813,16 @@ public class ExternalDataUtils {
         return ExternalDataConstants.CLASS_NAME_SHP_INPUT_FORMAT.equals(inputFormat)
                 || ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat);
     }
+
     public static void setExternalDataProjectionInfo(DataProjectionInfo projectionInfo, Map<String, String> properties)
             throws IOException {
-        if(properties.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)){
+        if (properties.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
             ARecordType expectedType = projectionInfo.getProjectionInfo();
-            if(expectedType == DataProjectionInfo.EMPTY_TYPE || expectedType == DataProjectionInfo.ALL_FIELDS_TYPE)
+            if (expectedType == DataProjectionInfo.EMPTY_TYPE || expectedType == DataProjectionInfo.ALL_FIELDS_TYPE)
                 properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS, expectedType.getTypeName());
             else {
-                properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS, String.join(",", expectedType.getFieldNames()));
+                properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS,
+                        String.join(",", expectedType.getFieldNames()));
             }
             properties.put(ExternalDataConstants.KEY_FILTER_PUSHDOWN_MBR, projectionInfo.getFilterMBR());
             return;

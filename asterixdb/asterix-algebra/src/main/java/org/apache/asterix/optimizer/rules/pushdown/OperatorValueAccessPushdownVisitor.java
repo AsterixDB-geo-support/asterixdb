@@ -25,9 +25,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import com.esri.core.geometry.Envelope;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.metadata.DataverseName;
 import org.apache.asterix.external.util.ExternalDataUtils;
@@ -96,7 +93,10 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteOperato
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteResultOperator;
 import org.apache.hyracks.algebricks.core.algebra.visitors.ILogicalOperatorVisitor;
 
-import javax.xml.crypto.Data;
+import com.esri.core.geometry.Envelope;
+
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
 
 /**
  * This visitor visits the entire plan and tries to build the information of the required values from all dataset
@@ -118,6 +118,7 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
     private double yMin;
     private double xMax;
     private double yMax;
+
     public OperatorValueAccessPushdownVisitor(IOptimizationContext context) {
         this.context = context;
         builder = new ExpectedSchemaBuilder();
@@ -553,6 +554,7 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
     private void visitInputs(ILogicalOperator op) throws AlgebricksException {
         visitInputs(op, null);
     }
+
     private boolean isShapeFileFormat() throws AlgebricksException {
         ObjectSet<Int2ObjectMap.Entry<Set<DataSource>>> entrySet =
                 ((AsterixOptimizationContext) context).getDataSourceMap().int2ObjectEntrySet();
@@ -562,7 +564,8 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
                 DataverseName dataverse = dataSource.getId().getDataverseName();
                 String dataSetName = dataSource.getId().getDatasourceName();
                 Dataset dataset = metadataProvider.findDataset(dataverse, dataSetName);
-                if (ExternalDataUtils.isShapefileFormat(((ExternalDatasetDetails) dataset.getDatasetDetails()).getProperties())) {
+                if (ExternalDataUtils
+                        .isShapefileFormat(((ExternalDatasetDetails) dataset.getDatasetDetails()).getProperties())) {
                     return true;
                 }
             }

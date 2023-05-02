@@ -18,15 +18,15 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hyracks.data.std.api.IValueReference;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  */

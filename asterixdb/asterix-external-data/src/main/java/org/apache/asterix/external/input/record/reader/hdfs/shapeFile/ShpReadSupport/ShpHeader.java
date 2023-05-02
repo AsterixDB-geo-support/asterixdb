@@ -18,11 +18,11 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShpReadSupport;
 
-import org.apache.commons.io.EndianUtils;
-
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.Serializable;
+
+import org.apache.commons.io.EndianUtils;
 
 /**
  */

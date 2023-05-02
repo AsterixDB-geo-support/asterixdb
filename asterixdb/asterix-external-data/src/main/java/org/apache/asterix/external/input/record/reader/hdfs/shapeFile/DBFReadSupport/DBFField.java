@@ -18,13 +18,9 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport;
 
-import org.apache.hadoop.io.*;
-
 import java.io.DataInput;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.GregorianCalendar;
 
 public class DBFField implements Serializable {
 
@@ -107,6 +103,7 @@ public class DBFField implements Serializable {
         }
         return field;
     }
+
     @Override
     public String toString() {
         final char c = (char) dataType;

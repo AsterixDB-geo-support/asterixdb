@@ -18,6 +18,9 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile;
 
+import java.io.IOException;
+import java.util.Arrays;
+
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport.DBFReader;
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShpReadSupport.ShpReader;
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShxReadSupport.ShxReader;
@@ -25,16 +28,12 @@ import org.apache.asterix.external.parser.AbstractDataParser;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.FileSplit;
-import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.InputSplit;
-
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.RecordReader;
+import org.apache.hadoop.mapred.Reporter;
 import org.apache.hyracks.data.std.api.IValueReference;
-
-import java.io.IOException;
-import java.util.Arrays;
 
 public abstract class AbstractShapeReader<T extends IValueReference> extends AbstractDataParser
         implements RecordReader<Void, T> {

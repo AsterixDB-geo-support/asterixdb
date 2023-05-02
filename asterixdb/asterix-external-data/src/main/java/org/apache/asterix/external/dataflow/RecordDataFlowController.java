@@ -55,7 +55,7 @@ public class RecordDataFlowController<T> extends AbstractDataFlowController {
             TupleForwarder tupleForwarder = new TupleForwarder(ctx, writer);
             while ((outputLimit < 0 || processedTuples < outputLimit) && recordReader.hasNext()) {
                 IRawRecord<? extends T> record = recordReader.next();
-                if(record==null)
+                if (record == null)
                     continue;
                 tb.reset();
                 if (dataParser.parse(record, tb.getDataOutput())) {

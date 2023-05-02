@@ -18,15 +18,16 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShpReadSupport;
 
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.Serializable;
+
+import org.apache.commons.io.EndianUtils;
+
 import com.esri.core.geometry.MultiPoint;
 import com.esri.core.geometry.Point;
 import com.esri.core.geometry.Polygon;
 import com.esri.core.geometry.Polyline;
-import org.apache.commons.io.EndianUtils;
-
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.io.Serializable;
 
 /**
  * http://www.esri.com/library/whitepapers/pdfs/shapefile.pdf
@@ -47,6 +48,7 @@ public class ShpReader implements Serializable {
     private transient int numParts;
     private transient int numPoints;
     protected boolean isFilterMBRPushdown;
+
     public ShpReader(final DataInputStream dataInputStream, String filterMBRInfo) throws IOException {
         m_dataInputStream = dataInputStream;
         m_shpHeader = new ShpHeader(m_dataInputStream);
@@ -122,7 +124,7 @@ public class ShpReader implements Serializable {
         }
         numParts = EndianUtils.readSwappedInteger(m_dataInputStream);
         numPoints = EndianUtils.readSwappedInteger(m_dataInputStream);
-        int[] m_parts = new int[numParts+1];
+        int[] m_parts = new int[numParts + 1];
         for (int p = 0; p < numParts; p++) {
             m_parts[p] = EndianUtils.readSwappedInteger(m_dataInputStream);
         }
@@ -285,7 +287,7 @@ public class ShpReader implements Serializable {
             }
         }
         if (shapeType == 28) { //MultiPointM
-            if (contentLengthInBytes > (36 + numPoints * 16)) {   //the M measure can be optional
+            if (contentLengthInBytes > (36 + numPoints * 16)) { //the M measure can be optional
                 double mMin = EndianUtils.readSwappedDouble(m_dataInputStream);
                 double mMax = EndianUtils.readSwappedDouble(m_dataInputStream);
                 for (int i = 0; i < numPoints; i++) {

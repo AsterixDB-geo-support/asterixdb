@@ -98,9 +98,11 @@ public class HDFSDataSourceFactory implements IRecordReaderFactory<Object>, IInd
         JobConf hdfsConf = createHdfsConf(serviceCtx, configuration);
         configureHdfsConf(hdfsConf, configuration);
     }
+
     public void setRecordType(ARecordType recordType) {
         this.recordType = recordType;
     }
+
     protected JobConf createHdfsConf(IServiceContext serviceCtx, Map<String, String> configuration)
             throws HyracksDataException {
         this.serviceCtx = serviceCtx;
@@ -134,10 +136,10 @@ public class HDFSDataSourceFactory implements IRecordReaderFactory<Object>, IInd
                 RecordReader<?, ?> reader = conf.getInputFormat().getRecordReader(inputSplits[0], conf, Reporter.NULL);
                 this.recordClass = reader.createValue().getClass();
                 reader.close();
-            } else if (formatString.equals(ExternalDataConstants.FORMAT_PARQUET) || formatString.equals((ExternalDataConstants.FORMAT_SHAPE))) {
+            } else if (formatString.equals(ExternalDataConstants.FORMAT_PARQUET)
+                    || formatString.equals((ExternalDataConstants.FORMAT_SHAPE))) {
                 recordClass = IValueReference.class;
-            }
-            else {
+            } else {
                 recordReaderClazz = StreamRecordReaderProvider.getRecordReaderClazz(configuration);
                 this.recordClass = char[].class;
             }
@@ -304,9 +306,10 @@ public class HDFSDataSourceFactory implements IRecordReaderFactory<Object>, IInd
         if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT.trim())
                 .equals(ExternalDataConstants.INPUT_FORMAT_PARQUET)) {
             return new ParquetFileRecordReader<>(read, inputSplits, readSchedule, nodeName, conf, warningCollector);
-        } else if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT.trim()).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
-            return new ShapeFileRecordReader<>(read, inputSplits, readSchedule, nodeName, conf, warningCollector, recordType,
-                    configuration.get(ExternalDataConstants.KEY_REQUESTED_FIELDS),
+        } else if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT.trim())
+                .equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
+            return new ShapeFileRecordReader<>(read, inputSplits, readSchedule, nodeName, conf, warningCollector,
+                    recordType, configuration.get(ExternalDataConstants.KEY_REQUESTED_FIELDS),
                     configuration.get(ExternalDataConstants.KEY_FILTER_PUSHDOWN_MBR));
         } else {
             return new HDFSRecordReader<>(read, inputSplits, readSchedule, nodeName, conf, files, indexer);

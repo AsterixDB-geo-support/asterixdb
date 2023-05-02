@@ -18,15 +18,10 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport;
 
-import org.apache.hadoop.io.Writable;
-
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Based on https://code.google.com/p/javadbf/

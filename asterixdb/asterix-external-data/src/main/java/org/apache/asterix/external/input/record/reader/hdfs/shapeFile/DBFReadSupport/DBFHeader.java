@@ -18,13 +18,13 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport;
 
-import org.apache.commons.io.EndianUtils;
-
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.apache.commons.io.EndianUtils;
 
 /**
  */
@@ -49,17 +49,18 @@ public class DBFHeader implements Serializable {
     private List<DBFField> fields; /* each 32 bytes */
     private final int numberOfFields;
     private int totalFieldLengthInBytes;
+
     public DBFHeader(final DataInputStream dataInput) throws IOException {
         this.signature = dataInput.readByte(); /* 0     */
         this.year = dataInput.readByte(); /* 1     */
         this.month = dataInput.readByte(); /* 2     */
         this.day = dataInput.readByte(); /* 3     */
-        this.numberOfRecords = EndianUtils.readSwappedInteger(dataInput);  /* 4-7   */
+        this.numberOfRecords = EndianUtils.readSwappedInteger(dataInput); /* 4-7   */
 
-        this.headerLength = EndianUtils.readSwappedShort(dataInput);   /* 8-9   */
-        this.recordLength = EndianUtils.readSwappedShort(dataInput);  /* 10-11 */
+        this.headerLength = EndianUtils.readSwappedShort(dataInput); /* 8-9   */
+        this.recordLength = EndianUtils.readSwappedShort(dataInput); /* 10-11 */
 
-        this.reserved1 = dataInput.readShort();     /* 12-13 */
+        this.reserved1 = dataInput.readShort(); /* 12-13 */
         this.incompleteTransaction = dataInput.readByte(); /* 14    */
         this.encryptionFlag = dataInput.readByte(); /* 15    */
         this.freeRecordThread = dataInput.readInt(); /* 16-19 */
@@ -67,7 +68,7 @@ public class DBFHeader implements Serializable {
         this.reserved3 = dataInput.readInt(); /* 24-27 */
         this.mdxFlag = dataInput.readByte(); /* 28    */
         this.languageDriver = dataInput.readByte(); /* 29    */
-        this.reserved4 = dataInput.readShort();       /* 30-31 */
+        this.reserved4 = dataInput.readShort(); /* 30-31 */
 
         this.fields = new ArrayList<DBFField>();
         DBFField field;
@@ -79,6 +80,7 @@ public class DBFHeader implements Serializable {
         this.numberOfFields = this.fields.size();
         this.totalFieldLengthInBytes = totalFieldLegth;
     }
+
     public DBFField getField(final int i) {
         return fields.get(i);
     }
@@ -98,7 +100,8 @@ public class DBFHeader implements Serializable {
     public int getTotalFieldLengthInBytes() {
         return totalFieldLengthInBytes;
     }
-    public List<DBFField> getFields(){
+
+    public List<DBFField> getFields() {
         return this.fields;
     }
 }

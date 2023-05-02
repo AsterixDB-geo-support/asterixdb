@@ -18,11 +18,11 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShxReadSupport;
 
-import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShpReadSupport.ShpHeader;
-
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.Serializable;
+
+import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.ShpReadSupport.ShpHeader;
 
 public class ShxReader implements Serializable {
     private transient DataInputStream dataInputStream;

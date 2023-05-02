@@ -151,9 +151,10 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
         if (dataSourceFactory.isIndexible() && (files != null)) {
             ((IIndexibleExternalDataSource) dataSourceFactory).setSnapshot(files, indexingOp);
         }
-        if(configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
-            if(dataSourceFactory instanceof HDFSDataSourceFactory) {
-                ((HDFSDataSourceFactory)dataSourceFactory).setRecordType(recordType);
+        if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT)
+                .equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
+            if (dataSourceFactory instanceof HDFSDataSourceFactory) {
+                ((HDFSDataSourceFactory) dataSourceFactory).setRecordType(recordType);
             }
         }
         dataSourceFactory.configure(serviceContext, configuration, warningCollector);

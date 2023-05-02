@@ -18,23 +18,18 @@
  */
 package org.apache.asterix.external.input.record.reader.hdfs.shapeFile;
 
-import com.esri.core.geometry.MultiPoint;
-import com.esri.core.geometry.Polygon;
-import com.esri.core.geometry.Polyline;
-import com.esri.core.geometry.SpatialReference;
-import com.esri.core.geometry.ogc.OGCGeometry;
-import com.esri.core.geometry.ogc.OGCLineString;
-import com.esri.core.geometry.ogc.OGCMultiLineString;
-import com.esri.core.geometry.ogc.OGCMultiPoint;
-import com.esri.core.geometry.ogc.OGCMultiPolygon;
-import com.esri.core.geometry.ogc.OGCPoint;
-import com.esri.core.geometry.ogc.OGCPolygon;
+import java.io.IOException;
+import java.util.List;
+
 import org.apache.asterix.builders.RecordBuilder;
 import org.apache.asterix.external.api.IDataParser;
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport.DBFField;
 import org.apache.asterix.external.input.record.reader.hdfs.shapeFile.DBFReadSupport.DBFType;
 import org.apache.asterix.formats.nontagged.SerializerDeserializerProvider;
-import org.apache.asterix.om.base.*;
+import org.apache.asterix.om.base.ABoolean;
+import org.apache.asterix.om.base.AMutableGeometry;
+import org.apache.asterix.om.base.AMutableString;
+import org.apache.asterix.om.base.ANull;
 import org.apache.asterix.om.base.temporal.GregorianCalendarSystem;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.asterix.om.types.BuiltinType;
@@ -47,8 +42,17 @@ import org.apache.hyracks.api.dataflow.value.ISerializerDeserializer;
 import org.apache.hyracks.data.std.primitive.VoidPointable;
 import org.apache.hyracks.data.std.util.ArrayBackedValueStorage;
 
-import java.io.IOException;
-import java.util.List;
+import com.esri.core.geometry.MultiPoint;
+import com.esri.core.geometry.Polygon;
+import com.esri.core.geometry.Polyline;
+import com.esri.core.geometry.SpatialReference;
+import com.esri.core.geometry.ogc.OGCGeometry;
+import com.esri.core.geometry.ogc.OGCLineString;
+import com.esri.core.geometry.ogc.OGCMultiLineString;
+import com.esri.core.geometry.ogc.OGCMultiPoint;
+import com.esri.core.geometry.ogc.OGCMultiPolygon;
+import com.esri.core.geometry.ogc.OGCPoint;
+import com.esri.core.geometry.ogc.OGCPolygon;
 
 public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable> {
     private ARecordType recordType;
@@ -115,7 +119,7 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                 return true;
             }
             if (readGeometryField) {
-                if(!m_shpReader.hasMore())
+                if (!m_shpReader.hasMore())
                     return false;
                 int fieldIndex;
                 boolean hasReadFully = true;
@@ -194,7 +198,8 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                     }
                 } else {
                     //if geometry field is not read from the shapefile, the corresponding DBF record need to be skipped
-                    if(readDBFFields) m_dbfReader.skipBytes(m_dbfReader.getRecordLength());
+                    if (readDBFFields)
+                        m_dbfReader.skipBytes(m_dbfReader.getRecordLength());
                     ArrayBackedValueStorage valueContainer = new ArrayBackedValueStorage();
                     //set the record as NULL
                     IDataParser.toBytes(ANull.NULL, valueContainer, nullSerde);
