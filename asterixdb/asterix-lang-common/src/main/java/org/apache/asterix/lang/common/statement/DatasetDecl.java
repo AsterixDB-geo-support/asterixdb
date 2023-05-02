@@ -20,6 +20,7 @@ package org.apache.asterix.lang.common.statement;
 
 import java.util.Map;
 
+import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.config.DatasetConfig.DatasetType;
 import org.apache.asterix.common.exceptions.CompilationException;
 import org.apache.asterix.common.metadata.DataverseName;
@@ -31,6 +32,7 @@ import org.apache.asterix.lang.common.struct.Identifier;
 import org.apache.asterix.lang.common.util.ConfigurationUtil;
 import org.apache.asterix.lang.common.util.DatasetDeclParametersUtil;
 import org.apache.asterix.lang.common.visitor.base.ILangVisitor;
+import org.apache.asterix.metadata.dataset.DatasetFormatInfo;
 import org.apache.asterix.object.base.AdmObjectNode;
 import org.apache.asterix.object.base.IAdmNode;
 import org.apache.asterix.runtime.compression.CompressionManager;
@@ -43,7 +45,7 @@ public class DatasetDecl extends AbstractStatement {
     protected final DatasetType datasetType;
     protected final IDatasetDetailsDecl datasetDetailsDecl;
     protected final Map<String, String> hints;
-    private AdmObjectNode withObjectNode;
+    private final AdmObjectNode withObjectNode;
     protected final boolean ifNotExists;
 
     public DatasetDecl(DataverseName dataverse, Identifier name, TypeExpression itemType, TypeExpression metaItemType,
@@ -130,6 +132,30 @@ public class DatasetDecl extends AbstractStatement {
         }
         return storageBlockCompression
                 .getOptionalString(DatasetDeclParametersUtil.STORAGE_BLOCK_COMPRESSION_SCHEME_PARAMETER_NAME);
+    }
+
+    public DatasetFormatInfo getDatasetFormatInfo(String defaultFormat, int defaultMaxTupleCount,
+            float defaultFreeSpaceTolerance) {
+        if (datasetType != DatasetType.INTERNAL) {
+            return DatasetFormatInfo.SYSTEM_DEFAULT;
+        }
+
+        AdmObjectNode datasetFormatNode = (AdmObjectNode) withObjectNode
+                .getOrDefault(DatasetDeclParametersUtil.DATASET_FORMAT_PARAMETER_NAME, AdmObjectNode.EMPTY);
+        DatasetConfig.DatasetFormat datasetFormat = DatasetConfig.DatasetFormat.getFormat(datasetFormatNode
+                .getOptionalString(DatasetDeclParametersUtil.DATASET_FORMAT_FORMAT_PARAMETER_NAME, defaultFormat));
+
+        if (datasetFormat == DatasetConfig.DatasetFormat.ROW) {
+            return DatasetFormatInfo.SYSTEM_DEFAULT;
+        }
+
+        int maxTupleCount = datasetFormatNode.getOptionalInt(
+                DatasetDeclParametersUtil.DATASET_FORMAT_MAX_TUPLE_COUNT_PARAMETER_NAME, defaultMaxTupleCount);
+        float freeSpaceTolerance = datasetFormatNode.getOptionalFloat(
+                DatasetDeclParametersUtil.DATASET_FORMAT_FREE_SPACE_TOLERANCE_PARAMETER_NAME,
+                defaultFreeSpaceTolerance);
+
+        return new DatasetFormatInfo(datasetFormat, maxTupleCount, freeSpaceTolerance);
     }
 
     public Map<String, String> getHints() {

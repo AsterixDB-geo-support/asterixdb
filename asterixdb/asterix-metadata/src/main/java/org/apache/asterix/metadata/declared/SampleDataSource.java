@@ -29,7 +29,7 @@ import org.apache.hyracks.algebricks.common.utils.Pair;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvironment;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSource;
-import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionInfo;
+import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionFiltrationInfo;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.IOperatorSchema;
 import org.apache.hyracks.algebricks.core.algebra.properties.INodeDomain;
 import org.apache.hyracks.algebricks.core.jobgen.impl.JobGenContext;
@@ -60,15 +60,20 @@ public class SampleDataSource extends DataSource {
             List<LogicalVariable> minFilterVars, List<LogicalVariable> maxFilterVars,
             ITupleFilterFactory tupleFilterFactory, long outputLimit, IOperatorSchema opSchema,
             IVariableTypeEnvironment typeEnv, JobGenContext context, JobSpecification jobSpec, Object implConfig,
-            IProjectionInfo<?> projectionInfo) throws AlgebricksException {
-        return metadataProvider.buildBtreeRuntime(jobSpec, opSchema, typeEnv, context, true, false, null, dataset,
+            IProjectionFiltrationInfo<?> projectionInfo, IProjectionFiltrationInfo<?> metaProjectionInfo)
+            throws AlgebricksException {
+        return metadataProvider.getBtreeSearchRuntime(jobSpec, opSchema, typeEnv, context, true, false, null, dataset,
                 sampleIndexName, null, null, true, true, false, null, null, null, tupleFilterFactory, outputLimit,
-                false, false, DefaultTupleProjectorFactory.INSTANCE);
+                false, false, DefaultTupleProjectorFactory.INSTANCE, false);
     }
 
     @Override
     public boolean isScanAccessPathALeaf() {
         return false;
+    }
+
+    public Dataset getDataset() {
+        return dataset;
     }
 
     private static DataSourceId createSampleDataSourceId(Dataset dataset, String sampleIndexName) {

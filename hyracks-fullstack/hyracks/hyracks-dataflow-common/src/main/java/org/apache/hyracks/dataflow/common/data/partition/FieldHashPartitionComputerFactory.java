@@ -18,53 +18,51 @@
  */
 package org.apache.hyracks.dataflow.common.data.partition;
 
-import org.apache.hyracks.api.comm.IFrameTupleAccessor;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
 import org.apache.hyracks.api.dataflow.value.IBinaryHashFunction;
 import org.apache.hyracks.api.dataflow.value.IBinaryHashFunctionFactory;
 import org.apache.hyracks.api.dataflow.value.ITuplePartitionComputer;
 import org.apache.hyracks.api.dataflow.value.ITuplePartitionComputerFactory;
-import org.apache.hyracks.api.exceptions.HyracksDataException;
+
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 
 public class FieldHashPartitionComputerFactory implements ITuplePartitionComputerFactory {
-    private static final long serialVersionUID = 1L;
+
+    private static final long serialVersionUID = 2L;
     private final int[] hashFields;
     private final IBinaryHashFunctionFactory[] hashFunctionFactories;
+    private final int[][] partitionsMap;
 
     public FieldHashPartitionComputerFactory(int[] hashFields, IBinaryHashFunctionFactory[] hashFunctionFactories) {
         this.hashFields = hashFields;
         this.hashFunctionFactories = hashFunctionFactories;
+        this.partitionsMap = null;
+    }
+
+    public FieldHashPartitionComputerFactory(int[] hashFields, IBinaryHashFunctionFactory[] hashFunctionFactories,
+            int[][] partitionsMap) {
+        this.hashFields = hashFields;
+        this.hashFunctionFactories = hashFunctionFactories;
+        this.partitionsMap = partitionsMap;
     }
 
     @Override
-    public ITuplePartitionComputer createPartitioner(IHyracksTaskContext hyracksTaskContext) {
+    public ITuplePartitionComputer createPartitioner(IHyracksTaskContext ctx) {
         final IBinaryHashFunction[] hashFunctions = new IBinaryHashFunction[hashFunctionFactories.length];
         for (int i = 0; i < hashFunctionFactories.length; ++i) {
             hashFunctions[i] = hashFunctionFactories[i].createBinaryHashFunction();
         }
-        return new ITuplePartitionComputer() {
-            @Override
-            public int partition(IFrameTupleAccessor accessor, int tIndex, int nParts) throws HyracksDataException {
-                if (nParts == 1) {
-                    return 0;
+        if (partitionsMap == null) {
+            return new FieldHashPartitionComputer(hashFields, hashFunctions, null);
+        } else {
+            Int2IntMap storagePartition2Compute = new Int2IntOpenHashMap();
+            for (int i = 0; i < partitionsMap.length; i++) {
+                for (int storagePartition : partitionsMap[i]) {
+                    storagePartition2Compute.put(storagePartition, i);
                 }
-                int h = 0;
-                int startOffset = accessor.getTupleStartOffset(tIndex);
-                int slotLength = accessor.getFieldSlotsLength();
-                for (int j = 0; j < hashFields.length; ++j) {
-                    int fIdx = hashFields[j];
-                    IBinaryHashFunction hashFn = hashFunctions[j];
-                    int fStart = accessor.getFieldStartOffset(tIndex, fIdx);
-                    int fEnd = accessor.getFieldEndOffset(tIndex, fIdx);
-                    int fh = hashFn.hash(accessor.getBuffer().array(), startOffset + slotLength + fStart,
-                            fEnd - fStart);
-                    h = h * 31 + fh;
-                }
-                if (h < 0) {
-                    h = -(h + 1);
-                }
-                return h % nParts;
             }
-        };
+            return new FieldHashPartitionComputer(hashFields, hashFunctions, storagePartition2Compute);
+        }
     }
 }

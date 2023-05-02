@@ -33,15 +33,17 @@ import org.apache.hyracks.algebricks.common.constraints.AlgebricksAbsolutePartit
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksPartitionConstraint;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.common.utils.Pair;
+import org.apache.hyracks.algebricks.core.algebra.base.IOptimizationContext;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvironment;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSource;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSourcePropertiesProvider;
-import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionInfo;
+import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionFiltrationInfo;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.IOperatorSchema;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.OrderOperator;
 import org.apache.hyracks.algebricks.core.algebra.properties.ILocalStructuralProperty;
 import org.apache.hyracks.algebricks.core.algebra.properties.INodeDomain;
+import org.apache.hyracks.algebricks.core.algebra.properties.IPhysicalPropertiesVector;
 import org.apache.hyracks.algebricks.core.algebra.properties.LocalOrderProperty;
 import org.apache.hyracks.algebricks.core.algebra.properties.OrderColumn;
 import org.apache.hyracks.algebricks.core.algebra.properties.RandomPartitioningProperty;
@@ -74,9 +76,7 @@ public class QueryIndexDatasource extends FunctionDataSource {
         ARecordType type = (ARecordType) iType;
         IAType[] fieldTypes = type.getFieldTypes();
         schemaTypes = new IAType[fieldTypes.length];
-        for (int i = 0; i < schemaTypes.length; i++) {
-            schemaTypes[i] = fieldTypes[i];
-        }
+        System.arraycopy(fieldTypes, 0, schemaTypes, 0, schemaTypes.length);
     }
 
     @Override
@@ -104,23 +104,34 @@ public class QueryIndexDatasource extends FunctionDataSource {
             List<LogicalVariable> minFilterVars, List<LogicalVariable> maxFilterVars,
             ITupleFilterFactory tupleFilterFactory, long outputLimit, IOperatorSchema opSchema,
             IVariableTypeEnvironment typeEnv, JobGenContext context, JobSpecification jobSpec, Object implConfig,
-            IProjectionInfo<?> projectionInfo) throws AlgebricksException {
-        return metadataProvider.buildBtreeRuntime(jobSpec, opSchema, typeEnv, context, true, false, null, ds, indexName,
-                null, null, true, true, false, null, null, null, tupleFilterFactory, outputLimit, false, false,
-                DefaultTupleProjectorFactory.INSTANCE);
+            IProjectionFiltrationInfo<?> projectionInfo, IProjectionFiltrationInfo<?> metaProjectionInfo)
+            throws AlgebricksException {
+        return metadataProvider.getBtreeSearchRuntime(jobSpec, opSchema, typeEnv, context, true, false, null, ds,
+                indexName, null, null, true, true, false, null, null, null, tupleFilterFactory, outputLimit, false,
+                false, DefaultTupleProjectorFactory.INSTANCE, false);
     }
 
     @Override
     public IDataSourcePropertiesProvider getPropertiesProvider() {
-        return scanVariables -> {
-            List<ILocalStructuralProperty> propsLocal = new ArrayList<>(1);
-            //TODO(ali): consider primary keys?
-            List<OrderColumn> secKeys = new ArrayList<>(numSecKeys);
-            for (int i = 0; i < numSecKeys; i++) {
-                secKeys.add(new OrderColumn(scanVariables.get(i), OrderOperator.IOrder.OrderKind.ASC));
+        return new IDataSourcePropertiesProvider() {
+            @Override
+            public IPhysicalPropertiesVector computeRequiredProperties(List<LogicalVariable> scanVariables,
+                    IOptimizationContext ctx) {
+                return StructuralPropertiesVector.EMPTY_PROPERTIES_VECTOR;
             }
-            propsLocal.add(new LocalOrderProperty(secKeys));
-            return new StructuralPropertiesVector(new RandomPartitioningProperty(domain), propsLocal);
+
+            @Override
+            public IPhysicalPropertiesVector computeDeliveredProperties(List<LogicalVariable> scanVariables,
+                    IOptimizationContext ctx) {
+                List<ILocalStructuralProperty> propsLocal = new ArrayList<>(1);
+                //TODO(ali): consider primary keys?
+                List<OrderColumn> secKeys = new ArrayList<>(numSecKeys);
+                for (int i = 0; i < numSecKeys; i++) {
+                    secKeys.add(new OrderColumn(scanVariables.get(i), OrderOperator.IOrder.OrderKind.ASC));
+                }
+                propsLocal.add(new LocalOrderProperty(secKeys));
+                return new StructuralPropertiesVector(new RandomPartitioningProperty(domain), propsLocal);
+            }
         };
     }
 

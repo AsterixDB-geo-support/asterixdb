@@ -27,6 +27,8 @@ import java.util.Set;
 import org.apache.asterix.common.cluster.IClusterStateManager;
 import org.apache.asterix.common.functions.FunctionSignature;
 import org.apache.asterix.external.adapter.factory.GenericAdapterFactory;
+import org.apache.asterix.external.api.IDataParserFactory;
+import org.apache.asterix.external.parser.factory.ADMDataParserFactory;
 import org.apache.asterix.metadata.api.IDatasourceFunction;
 import org.apache.asterix.om.types.IAType;
 import org.apache.asterix.om.utils.RecordUtil;
@@ -34,14 +36,16 @@ import org.apache.hyracks.algebricks.common.constraints.AlgebricksAbsolutePartit
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksPartitionConstraint;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.common.utils.Pair;
+import org.apache.hyracks.algebricks.core.algebra.base.IOptimizationContext;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvironment;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSource;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSourcePropertiesProvider;
-import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionInfo;
+import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionFiltrationInfo;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.IOperatorSchema;
 import org.apache.hyracks.algebricks.core.algebra.properties.INodeDomain;
+import org.apache.hyracks.algebricks.core.algebra.properties.IPhysicalPropertiesVector;
 import org.apache.hyracks.algebricks.core.algebra.properties.RandomPartitioningProperty;
 import org.apache.hyracks.algebricks.core.algebra.properties.StructuralPropertiesVector;
 import org.apache.hyracks.algebricks.core.jobgen.impl.JobGenContext;
@@ -81,8 +85,19 @@ public abstract class FunctionDataSource extends DataSource {
     @Override
     public IDataSourcePropertiesProvider getPropertiesProvider() {
         // Unordered Random partitioning on all nodes
-        return scanVariables -> new StructuralPropertiesVector(new RandomPartitioningProperty(domain),
-                Collections.emptyList());
+        return new IDataSourcePropertiesProvider() {
+            @Override
+            public IPhysicalPropertiesVector computeRequiredProperties(List<LogicalVariable> scanVariables,
+                    IOptimizationContext ctx) {
+                return StructuralPropertiesVector.EMPTY_PROPERTIES_VECTOR;
+            }
+
+            @Override
+            public IPhysicalPropertiesVector computeDeliveredProperties(List<LogicalVariable> scanVariables,
+                    IOptimizationContext ctx) {
+                return new StructuralPropertiesVector(new RandomPartitioningProperty(domain), Collections.emptyList());
+            }
+        };
     }
 
     @Override
@@ -92,15 +107,19 @@ public abstract class FunctionDataSource extends DataSource {
             List<LogicalVariable> minFilterVars, List<LogicalVariable> maxFilterVars,
             ITupleFilterFactory tupleFilterFactory, long outputLimit, IOperatorSchema opSchema,
             IVariableTypeEnvironment typeEnv, JobGenContext context, JobSpecification jobSpec, Object implConfig,
-            IProjectionInfo<?> projectionInfo) throws AlgebricksException {
+            IProjectionFiltrationInfo<?> projectionInfo, IProjectionFiltrationInfo<?> metaProjectionInfo)
+            throws AlgebricksException {
         GenericAdapterFactory adapterFactory = new GenericAdapterFactory();
         adapterFactory.setOutputType(RecordUtil.FULLY_OPEN_RECORD_TYPE);
         IClusterStateManager csm = metadataProvider.getApplicationContext().getClusterStateManager();
         FunctionDataSourceFactory factory =
                 new FunctionDataSourceFactory(createFunction(metadataProvider, getLocations(csm)));
-        adapterFactory.configure(factory);
-        return metadataProvider.buildExternalDatasetDataScannerRuntime(jobSpec, itemType, adapterFactory,
-                tupleFilterFactory, outputLimit);
+        IDataParserFactory dataParserFactory = createDataParserFactory();
+        dataParserFactory.setRecordType(RecordUtil.FULLY_OPEN_RECORD_TYPE);
+        dataParserFactory.configure(Collections.emptyMap());
+        adapterFactory.configure(factory, dataParserFactory);
+        return metadataProvider.getExternalDatasetScanRuntime(jobSpec, itemType, adapterFactory, tupleFilterFactory,
+                outputLimit);
     }
 
     protected abstract IDatasourceFunction createFunction(MetadataProvider metadataProvider,
@@ -110,6 +129,10 @@ public abstract class FunctionDataSource extends DataSource {
         String[] allPartitions = csm.getClusterLocations().getLocations();
         Set<String> ncs = new HashSet<>(Arrays.asList(allPartitions));
         return new AlgebricksAbsolutePartitionConstraint(ncs.toArray(new String[ncs.size()]));
+    }
+
+    protected IDataParserFactory createDataParserFactory() {
+        return new ADMDataParserFactory();
     }
 
     protected static DataSourceId createDataSourceId(FunctionIdentifier fid, String... parameters) {

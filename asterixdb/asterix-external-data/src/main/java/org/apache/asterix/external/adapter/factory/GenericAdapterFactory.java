@@ -19,7 +19,6 @@
 package org.apache.asterix.external.adapter.factory;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 import org.apache.asterix.common.api.INcApplicationContext;
@@ -30,15 +29,11 @@ import org.apache.asterix.common.library.ILibraryManager;
 import org.apache.asterix.external.api.IDataFlowController;
 import org.apache.asterix.external.api.IDataParserFactory;
 import org.apache.asterix.external.api.IExternalDataSourceFactory;
-import org.apache.asterix.external.api.IIndexibleExternalDataSource;
-import org.apache.asterix.external.api.IIndexingAdapterFactory;
 import org.apache.asterix.external.api.ITypedAdapterFactory;
 import org.apache.asterix.external.dataflow.AbstractFeedDataFlowController;
 import org.apache.asterix.external.dataset.adapter.FeedAdapter;
 import org.apache.asterix.external.dataset.adapter.GenericAdapter;
-import org.apache.asterix.external.indexing.ExternalFile;
 import org.apache.asterix.external.input.HDFSDataSourceFactory;
-import org.apache.asterix.external.parser.factory.ADMDataParserFactory;
 import org.apache.asterix.external.provider.DataflowControllerProvider;
 import org.apache.asterix.external.provider.DatasourceFactoryProvider;
 import org.apache.asterix.external.provider.ParserFactoryProvider;
@@ -48,7 +43,6 @@ import org.apache.asterix.external.util.ExternalDataUtils;
 import org.apache.asterix.external.util.FeedLogManager;
 import org.apache.asterix.external.util.FeedUtils;
 import org.apache.asterix.om.types.ARecordType;
-import org.apache.asterix.om.utils.RecordUtil;
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksAbsolutePartitionConstraint;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.api.application.ICCServiceContext;
@@ -62,7 +56,7 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAdapterFactory {
+public class GenericAdapterFactory implements ITypedAdapterFactory {
 
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = LogManager.getLogger();
@@ -70,18 +64,10 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
     private IDataParserFactory dataParserFactory;
     private ARecordType recordType;
     private Map<String, String> configuration;
-    private List<ExternalFile> files;
-    private boolean indexingOp;
     private boolean isFeed;
     private FileSplit[] feedLogFileSplits;
     private ARecordType metaType;
     private transient FeedLogManager feedLogManager;
-
-    @Override
-    public void setSnapshot(List<ExternalFile> files, boolean indexingOp) {
-        this.files = files;
-        this.indexingOp = indexingOp;
-    }
 
     @Override
     public String getAlias() {
@@ -114,7 +100,7 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
             feedLogManager.touch();
         }
         IDataFlowController controller = DataflowControllerProvider.getDataflowController(recordType, ctx, partition,
-                dataSourceFactory, dataParserFactory, configuration, indexingOp, isFeed, feedLogManager);
+                dataSourceFactory, dataParserFactory, configuration, isFeed, feedLogManager);
         if (isFeed) {
             return new FeedAdapter((AbstractFeedDataFlowController) controller);
         } else {
@@ -127,9 +113,6 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
         if (dataSourceFactory == null) {
             dataSourceFactory = createExternalDataSourceFactory(configuration);
             // create and configure parser factory
-            if (dataSourceFactory.isIndexible() && (files != null)) {
-                ((IIndexibleExternalDataSource) dataSourceFactory).setSnapshot(files, indexingOp);
-            }
             dataSourceFactory.configure(serviceContext, configuration, warningCollector);
         }
         if (dataParserFactory == null) {
@@ -148,9 +131,6 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
         ICcApplicationContext appCtx = (ICcApplicationContext) serviceContext.getApplicationContext();
         ExternalDataUtils.validateDataSourceParameters(configuration);
         dataSourceFactory = createExternalDataSourceFactory(configuration);
-        if (dataSourceFactory.isIndexible() && (files != null)) {
-            ((IIndexibleExternalDataSource) dataSourceFactory).setSnapshot(files, indexingOp);
-        }
         if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT)
                 .equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
             if (dataSourceFactory instanceof HDFSDataSourceFactory) {
@@ -216,18 +196,18 @@ public class GenericAdapterFactory implements IIndexingAdapterFactory, ITypedAda
     }
 
     /**
-     * Use pre-configured datasource factory
-     * For function datasources
+     * Use pre-configured datasource factory For function datasources
      *
      * @param dataSourceFactory
-     *            the function datasource factory
+     *         the function datasource factory
+     * @param dataParserFactory
+     *         the function data parser factory
      * @throws AlgebricksException
      */
-    public void configure(IExternalDataSourceFactory dataSourceFactory) throws AlgebricksException {
+    public void configure(IExternalDataSourceFactory dataSourceFactory, IDataParserFactory dataParserFactory)
+            throws AlgebricksException {
         this.dataSourceFactory = dataSourceFactory;
-        dataParserFactory = new ADMDataParserFactory();
-        dataParserFactory.setRecordType(RecordUtil.FULLY_OPEN_RECORD_TYPE);
-        dataParserFactory.configure(Collections.emptyMap());
+        this.dataParserFactory = dataParserFactory;
         configuration = Collections.emptyMap();
     }
 

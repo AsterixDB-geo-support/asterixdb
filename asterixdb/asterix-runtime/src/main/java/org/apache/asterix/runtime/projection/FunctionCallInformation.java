@@ -27,7 +27,6 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 
-import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.om.exceptions.ExceptionUtil;
 import org.apache.asterix.om.types.ATypeTag;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -41,16 +40,20 @@ public class FunctionCallInformation implements Serializable {
     private static final long serialVersionUID = -7884346933746232736L;
     private final String functionName;
     private final SourceLocation sourceLocation;
+    private final IProjectionFiltrationWarningFactory warningFactory;
     private Set<ATypeTag> typeMismatches;
 
-    public FunctionCallInformation(String functionName, SourceLocation sourceLocation) {
-        this(functionName, sourceLocation, Collections.emptySet());
+    public FunctionCallInformation(String functionName, SourceLocation sourceLocation,
+            IProjectionFiltrationWarningFactory warningFactory) {
+        this(functionName, sourceLocation, Collections.emptySet(), warningFactory);
     }
 
-    private FunctionCallInformation(String functionName, SourceLocation sourceLocation, Set<ATypeTag> typeMismatches) {
+    private FunctionCallInformation(String functionName, SourceLocation sourceLocation, Set<ATypeTag> typeMismatches,
+            IProjectionFiltrationWarningFactory warningFactory) {
         this.functionName = functionName;
         this.sourceLocation = sourceLocation;
         this.typeMismatches = typeMismatches;
+        this.warningFactory = warningFactory;
     }
 
     public String getFunctionName() {
@@ -61,16 +64,16 @@ public class FunctionCallInformation implements Serializable {
         return sourceLocation;
     }
 
-    public Warning createTypeMismatchWarning(ATypeTag expectedType, ATypeTag actualType) {
-        if (typeMismatches == null) {
+    public Warning createWarning(ATypeTag expectedType, ATypeTag actualType) {
+        if (typeMismatches.isEmpty()) {
             typeMismatches = EnumSet.noneOf(ATypeTag.class);
         } else if (typeMismatches.contains(actualType)) {
             //We already issued a warning containing the same actual type. So, we ignore it
             return null;
         }
         typeMismatches.add(actualType);
-        return Warning.of(getSourceLocation(), ErrorCode.TYPE_MISMATCH_FUNCTION, getFunctionName(),
-                ExceptionUtil.indexToPosition(0), expectedType, actualType);
+        return warningFactory.createWarning(getSourceLocation(), getFunctionName(), ExceptionUtil.indexToPosition(0),
+                expectedType, actualType);
     }
 
     public void writeFields(DataOutput output) throws IOException {
@@ -86,11 +89,13 @@ public class FunctionCallInformation implements Serializable {
         String functionName = in.readUTF();
         SourceLocation sourceLocation = SourceLocation.create(in);
         int typeMismatchesLength = in.readInt();
-        Set<ATypeTag> typeMismatches = EnumSet.noneOf(ATypeTag.class);
+        Set<ATypeTag> warnings = EnumSet.noneOf(ATypeTag.class);
+        IProjectionFiltrationWarningFactory warningFactory =
+                ProjectionFiltrationWarningFactoryProvider.TYPE_MISMATCH_FACTORY;
         for (int i = 0; i < typeMismatchesLength; i++) {
-            typeMismatches.add(ATypeTag.VALUE_TYPE_MAPPING[in.readByte()]);
+            warnings.add(ATypeTag.VALUE_TYPE_MAPPING[in.readByte()]);
         }
-        return new FunctionCallInformation(functionName, sourceLocation, typeMismatches);
+        return new FunctionCallInformation(functionName, sourceLocation, warnings, warningFactory);
     }
 
     @Override

@@ -162,7 +162,6 @@ import org.apache.asterix.lang.common.statement.LoadStatement;
 import org.apache.asterix.lang.common.statement.NodeGroupDropStatement;
 import org.apache.asterix.lang.common.statement.NodegroupDecl;
 import org.apache.asterix.lang.common.statement.Query;
-import org.apache.asterix.lang.common.statement.RefreshExternalDatasetStatement;
 import org.apache.asterix.lang.common.statement.SetStatement;
 import org.apache.asterix.lang.common.statement.SynonymDropStatement;
 import org.apache.asterix.lang.common.statement.TypeDecl;
@@ -171,7 +170,6 @@ import org.apache.asterix.lang.common.statement.UpdateStatement;
 import org.apache.asterix.lang.common.statement.UpsertStatement;
 import org.apache.asterix.lang.common.statement.ViewDecl;
 import org.apache.asterix.lang.common.statement.ViewDropStatement;
-import org.apache.asterix.lang.common.statement.WriteStatement;
 import org.apache.asterix.lang.common.struct.Identifier;
 import org.apache.asterix.lang.common.struct.OperatorType;
 import org.apache.asterix.lang.common.struct.QuantifiedPair;
@@ -209,6 +207,7 @@ import org.apache.asterix.lang.sqlpp.struct.SetOperationRight;
 import org.apache.asterix.lang.sqlpp.util.ExpressionToVariableUtil;
 import org.apache.asterix.lang.sqlpp.util.FunctionMapUtil;
 import org.apache.asterix.lang.sqlpp.util.SqlppVariableUtil;
+import org.apache.asterix.metadata.bootstrap.MetadataBuiltinEntities;
 import org.apache.asterix.metadata.utils.MetadataConstants;
 import org.apache.asterix.om.exceptions.TypeMismatchException;
 import org.apache.asterix.om.functions.BuiltinFunctions;
@@ -689,35 +688,53 @@ class SQLPPParser extends ScopeChecker implements IParser {
       Pattern lessThanOnePat = Pattern.compile("0\\.\\d+");
       try {
         switch (hintToken.hint) {
-          case SINGLE_DATASET_PREDICATE_SELECTIVITY_HINT:
-            selectivity = 1.0; // uninitialized
-            if (hintToken.hintParams != null) {
-            Matcher mat = lessThanOnePat.matcher(hintToken.hintParams);
-            if (mat.find()) {
-                selectivity = Double.parseDouble (mat.group());
-                }
-            }
-
-            return new PredicateCardinalityAnnotation(selectivity);
-          case JOIN_PREDICATE_PRODUCTIVITY_HINT:
-            productivity = 1.0; // uninitialized
-            String leftSideDataSet = null;
-            if (hintToken.hintParams != null) {
-                Matcher StringNum = stringNumber.matcher(hintToken.hintParams);
-
-                if (StringNum.find()) {
-                    String matchedGroup = StringNum.group();
-                    Pattern var = Pattern.compile("[a-zA-Z]\\w*"); // any word character [a-zA-Z_0-9]
-                    Matcher matVar = var.matcher(matchedGroup);
-                    if (matVar.find())
-                        leftSideDataSet = matVar.group();
-                    Matcher numMat = number.matcher(matchedGroup);
-                    if (numMat.find())
-                        productivity = Double.parseDouble (numMat.group());
-                }
-            }
-            // attach hint to global scope
-            return new JoinProductivityAnnotation (productivity, leftSideDataSet);
+           case SINGLE_DATASET_PREDICATE_SELECTIVITY_HINT:
+             if (hintToken.hintParams == null) {
+               throw new SqlppParseException(getSourceLocation(hintToken), "Expected selectivity value");
+             }
+             else {
+               selectivity = 1.0; // uninitialized
+               Matcher mat = lessThanOnePat.matcher(hintToken.hintParams);
+               if (mat.find()) {
+                 selectivity = Double.parseDouble (mat.group());
+               }
+               else {
+                 throw new SqlppParseException(getSourceLocation(hintToken), "Selectivity has to be a decimal value greater than 0 and less than 1");
+               }
+               return new PredicateCardinalityAnnotation(selectivity);
+             }
+           case JOIN_PREDICATE_PRODUCTIVITY_HINT:
+             if (hintToken.hintParams == null) {
+               throw new SqlppParseException(getSourceLocation(hintToken), "Expected productivity collection name and value");
+             }
+             else {
+               productivity = 1.0; // uninitialized
+               String leftSideDataSet = null;
+               Matcher StringNum = stringNumber.matcher(hintToken.hintParams);
+               if (StringNum.find()) {
+                 String matchedGroup = StringNum.group();
+                 Pattern var = Pattern.compile("[a-zA-Z]\\w*"); // any word character [a-zA-Z_0-9]
+                 Matcher matVar = var.matcher(matchedGroup);
+                 if (matVar.find()) {
+                   leftSideDataSet = matVar.group();
+                 }
+                 else {
+                    throw new SqlppParseException(getSourceLocation(hintToken), "Expected productivity collection name");
+                 }
+                 Matcher numMat = number.matcher(matchedGroup);
+                 if (numMat.find()) {
+                   productivity = Double.parseDouble (numMat.group());
+                 }
+                 else {
+                   throw new SqlppParseException(getSourceLocation(hintToken), "Productivity has to be a decimal value greater than 0");
+                 }
+               }
+               else {
+                 throw new SqlppParseException(getSourceLocation(hintToken), "Invalid format for productivity values");
+               }
+               // attach hint to global scope
+               return new JoinProductivityAnnotation (productivity, leftSideDataSet);
+             }
           case HASH_BROADCAST_JOIN_HINT:
             if (hintToken.hintParams == null) {
               return new BroadcastExpressionAnnotation(BroadcastExpressionAnnotation.BroadcastSide.RIGHT);
@@ -913,7 +930,6 @@ Statement SingleStatement() throws ParseException:
     | stmt = CreateStatement()
     | stmt = LoadStatement()
     | stmt = DropStatement()
-    | stmt = WriteStatement()
     | stmt = SetStatement()
     | stmt = InsertStatement()
     | stmt = DeleteStatement()
@@ -923,7 +939,6 @@ Statement SingleStatement() throws ParseException:
     | stmt = CompactStatement()
     | stmt = AnalyzeStatement()
     | stmt = Query()
-    | stmt = RefreshExternalDatasetStatement()
   )
   {
     return stmt;
@@ -1101,6 +1116,7 @@ DatasetDecl DatasetSpecification(Token startStmtToken) throws ParseException:
   TypeExpression typeExpr = null;
   TypeExpression metaTypeExpr = null;
   Pair<List<Integer>, List<List<String>>> primaryKeyFields = null;
+  Triple<List<Integer>, List<List<String>>, List<TypeExpression>> primaryKeyFieldsWithTypes = null;
   Map<String,String> hints = new HashMap<String,String>();
   DatasetDecl stmt = null;
   boolean autogenerated = false;
@@ -1109,7 +1125,7 @@ DatasetDecl DatasetSpecification(Token startStmtToken) throws ParseException:
 }
 {
   nameComponents = QualifiedName()
-  typeExpr = DatasetTypeSpecification()
+  (typeExpr = DatasetTypeSpecification())?
   (
     { String name; }
     <WITH>
@@ -1123,23 +1139,36 @@ DatasetDecl DatasetSpecification(Token startStmtToken) throws ParseException:
     metaTypeExpr = DatasetTypeSpecification()
   )?
   ifNotExists = IfNotExists()
-  primaryKeyFields = PrimaryKey()
+  (LOOKAHEAD(3) primaryKeyFieldsWithTypes = PrimaryKeyWithType()
+    | primaryKeyFields = PrimaryKey())
   (<AUTOGENERATED> { autogenerated = true; } )?
   ( <HINTS> hints = Properties() )?
   ( LOOKAHEAD(2) <WITH> <FILTER> <ON>  filterField = NestedField() )?
   ( <WITH> withRecord = RecordConstructor() )?
   {
     try {
-      InternalDetailsDecl idd = new InternalDetailsDecl(primaryKeyFields.second, primaryKeyFields.first, autogenerated,
-        filterField == null? null : filterField.first, filterField == null? null : filterField.second);
-      DatasetDeclParametersUtil.adjustInlineTypeDecl(typeExpr, primaryKeyFields.second, primaryKeyFields.first, false);
-      if (metaTypeExpr != null) {
-        DatasetDeclParametersUtil.adjustInlineTypeDecl(metaTypeExpr, primaryKeyFields.second, primaryKeyFields.first,
-          true);
+      if (typeExpr == null) {
+        InternalDetailsDecl idd = new InternalDetailsDecl(primaryKeyFieldsWithTypes.second,
+          primaryKeyFieldsWithTypes.first, autogenerated, filterField == null? null : filterField.first,
+          filterField == null? null : filterField.second, primaryKeyFieldsWithTypes.third);
+        final TypeReferenceExpression anyObjectReference = new TypeReferenceExpression(
+          new Pair(MetadataBuiltinEntities.ANY_OBJECT_DATATYPE.getDataverseName(),
+            new Identifier(MetadataBuiltinEntities.ANY_OBJECT_DATATYPE.getDatatypeName())));
+        stmt = new DatasetDecl(nameComponents.first, nameComponents.second, anyObjectReference, null, hints,
+          DatasetType.INTERNAL, idd, withRecord, ifNotExists);
+        return addSourceLocation(stmt, startStmtToken);
+      } else {
+        InternalDetailsDecl idd = new InternalDetailsDecl(primaryKeyFields.second, primaryKeyFields.first, autogenerated,
+          filterField == null? null : filterField.first, filterField == null? null : filterField.second);
+        DatasetDeclParametersUtil.adjustInlineTypeDecl(typeExpr, primaryKeyFields.second, primaryKeyFields.first, false);
+        if (metaTypeExpr != null) {
+          DatasetDeclParametersUtil.adjustInlineTypeDecl(metaTypeExpr, primaryKeyFields.second, primaryKeyFields.first,
+            true);
+        }
+        stmt = new DatasetDecl(nameComponents.first, nameComponents.second, typeExpr, metaTypeExpr, hints,
+          DatasetType.INTERNAL, idd, withRecord, ifNotExists);
+        return addSourceLocation(stmt, startStmtToken);
       }
-      stmt = new DatasetDecl(nameComponents.first, nameComponents.second, typeExpr, metaTypeExpr, hints,
-        DatasetType.INTERNAL, idd, withRecord, ifNotExists);
-      return addSourceLocation(stmt, startStmtToken);
     } catch (CompilationException e) {
        throw new SqlppParseException(getSourceLocation(startStmtToken), e.getMessage());
     }
@@ -1245,22 +1274,6 @@ void DatasetRecordField(RecordTypeDefinition recType) throws ParseException:
   type = TypeReference() ( <NOT> <UNKNOWN> { nullable = false; missable = false; } )?
   {
     recType.addField(fieldName, type, nullable, missable);
-  }
-}
-
-RefreshExternalDatasetStatement RefreshExternalDatasetStatement() throws ParseException:
-{
-  Token startToken = null;
-  Pair<DataverseName,Identifier> nameComponents = null;
-  String datasetName = null;
-}
-{
-  <REFRESH> { startToken = token; } <EXTERNAL> Dataset() nameComponents = QualifiedName()
-  {
-    RefreshExternalDatasetStatement stmt = new RefreshExternalDatasetStatement();
-    stmt.setDataverseName(nameComponents.first);
-    stmt.setDatasetName(nameComponents.second);
-    return addSourceLocation(stmt, startToken);
   }
 }
 
@@ -2144,6 +2157,45 @@ int FunctionArity() throws ParseException:
   }
 }
 
+Triple<List<Integer>, List<List<String>>, List<TypeExpression>> PrimaryKeyWithType() throws ParseException:
+{
+  Triple<List<Integer>, List<List<String>>, List<TypeExpression>> primaryKeyFieldsWithTypes = null;
+}
+{
+  <PRIMARY> <KEY> <LEFTPAREN> primaryKeyFieldsWithTypes = PrimaryKeyFieldsWithType() <RIGHTPAREN>
+  {
+    return primaryKeyFieldsWithTypes;
+  }
+}
+
+Triple<List<Integer>, List<List<String>>, List<TypeExpression>> PrimaryKeyFieldsWithType() throws ParseException:
+{
+  Pair<Integer, List<String>> tmp = null;
+  List<Integer> keyFieldSourceIndicators = new ArrayList<Integer>();
+  List<List<String>> primaryKeyFields = new ArrayList<List<String>>();
+  List<TypeExpression> primaryKeyFieldTypes = new ArrayList<TypeExpression>();
+  TypeExpression type = null;
+}
+{
+  tmp = NestedField() <COLON> type = TypeReference()
+    {
+      keyFieldSourceIndicators.add(tmp.first);
+      primaryKeyFields.add(tmp.second);
+      primaryKeyFieldTypes.add(type);
+    }
+  ( <COMMA> tmp = NestedField() <COLON> type = TypeReference()
+    {
+      keyFieldSourceIndicators.add(tmp.first);
+      primaryKeyFields.add(tmp.second);
+      primaryKeyFieldTypes.add(type);
+    }
+  )*
+    {
+      return new Triple<List<Integer>, List<List<String>>, List<TypeExpression>> (keyFieldSourceIndicators,
+        primaryKeyFields, primaryKeyFieldTypes);
+    }
+}
+
 Pair<List<Integer>, List<List<String>>> PrimaryKey() throws ParseException:
 {
   Pair<List<Integer>, List<List<String>>> primaryKeyFields = null;
@@ -2658,24 +2710,6 @@ Statement SetStatement() throws ParseException:
   <SET> { startToken = token; } pn = Identifier() pv = ConstantString()
     {
       SetStatement stmt = new SetStatement(pn, pv);
-      return addSourceLocation(stmt, startToken);
-    }
-}
-
-Statement WriteStatement() throws ParseException:
-{
-  Token startToken = null;
-  String nodeName = null;
-  String fileName = null;
-  Query query;
-  String writerClass = null;
-  Pair<Identifier,Identifier> nameComponents = null;
-}
-{
-  <WRITE> { startToken = token; } <OUTPUT> <TO> nodeName = Identifier() <COLON> fileName = ConstantString()
-    ( <USING> writerClass = ConstantString() )?
-    {
-      WriteStatement stmt = new WriteStatement(new Identifier(nodeName), fileName, writerClass);
       return addSourceLocation(stmt, startToken);
     }
 }
@@ -3670,7 +3704,10 @@ Expression RelExpr() throws ParseException:
           );
           while (hintToken != null) {
             annotation = parseExpressionAnnotation(hintToken);
-            annotationList.add(annotation);
+            if (annotation != null) {
+                // annotation may be null if hints are malformed
+                annotationList.add(annotation);
+            }
             hintToken = hintToken.specialToken;
             if (hintToken != null) {
                 SourceLocation sourceLoc = getSourceLocation(hintToken);
@@ -5640,7 +5677,6 @@ TOKEN [IGNORE_CASE]:
   | <PRESORTED : "pre-sorted">
   | <PRIMARY : "primary">
   | <RAW : "raw">
-  | <REFRESH : "refresh">
   | <RETURN : "return">
   | <RETURNING : "returning">
   | <RIGHT : "right">
@@ -5778,6 +5814,8 @@ TOKEN :
         | <EscapeNl>
         | <EscapeCr>
         | <EscapeTab>
+        | <EscapeBTickWithBslash>
+        | <EscapeBtickWithBtick>
         | ~["`","\\"])* "`">
   | <STRING_LITERAL : ( ("E")? "\"" (
           <EscapeQuot>
@@ -5786,6 +5824,7 @@ TOKEN :
         | <EscapeBspace>
         | <EscapeFormf>
         | <EscapeNl>
+        | <EscapeBTickWithBslash>
         | <EscapeCr>
         | <EscapeTab>
         | ~["\"","\\"])* "\"")
@@ -5796,9 +5835,12 @@ TOKEN :
         | <EscapeBspace>
         | <EscapeFormf>
         | <EscapeNl>
+        | <EscapeBTickWithBslash>
         | <EscapeCr>
         | <EscapeTab>
         | ~["\'","\\"])* "\'")>
+  | < #EscapeBTickWithBslash: "\\`" >
+  | < #EscapeBtickWithBtick: "``" >
   | < #EscapeQuot: "\\\"" >
   | < #EscapeApos: "\\\'" >
   | < #EscapeBslash: "\\\\" >

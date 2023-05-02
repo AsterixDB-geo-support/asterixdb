@@ -22,12 +22,14 @@ package org.apache.asterix.optimizer.rules.cbo;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.asterix.common.annotations.IndexedNLJoinExpressionAnnotation;
+import org.apache.asterix.common.annotations.SecondaryIndexSearchPreferenceAnnotation;
 import org.apache.asterix.metadata.declared.DataSource;
 import org.apache.asterix.metadata.declared.DataSourceId;
 import org.apache.asterix.metadata.entities.Index;
@@ -54,6 +56,7 @@ import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCa
 import org.apache.hyracks.algebricks.core.algebra.expressions.BroadcastExpressionAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.HashJoinExpressionAnnotation;
+import org.apache.hyracks.algebricks.core.algebra.expressions.IExpressionAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.UnnestingFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.AlgebricksBuiltinFunctions;
@@ -68,6 +71,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.visitors.Var
 import org.apache.hyracks.algebricks.core.algebra.prettyprint.IPlanPrettyPrinter;
 import org.apache.hyracks.algebricks.core.algebra.util.OperatorManipulationUtil;
 import org.apache.hyracks.algebricks.core.rewriter.base.PhysicalOptimizationConfig;
+import org.apache.hyracks.api.exceptions.Warning;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -76,14 +80,14 @@ public class JoinEnum {
     private static final Logger LOGGER = LogManager.getLogger();
 
     protected List<JoinCondition> joinConditions; // "global" list of join conditions
+    protected Map<IExpressionAnnotation, Warning> joinHints;
     protected List<PlanNode> allPlans; // list of all plans
     protected JoinNode[] jnArray; // array of all join nodes
     protected int jnArraySize;
     protected List<Pair<EmptyTupleSourceOperator, DataSourceScanOperator>> emptyTupleAndDataSourceOps;
     protected Map<EmptyTupleSourceOperator, ILogicalOperator> joinLeafInputsHashMap;
-    protected Map<DataSourceScanOperator, EmptyTupleSourceOperator> dataSourceEmptyTupleHashMap;
     protected List<ILogicalExpression> singleDatasetPreds;
-    protected List<ILogicalOperator> internalEdges;
+    protected List<AssignOperator> assignOps;
     protected List<ILogicalOperator> joinOps;
     protected ILogicalOperator localJoinOp; // used in nestedLoopsApplicable code.
     protected IOptimizationContext optCtx;
@@ -104,12 +108,12 @@ public class JoinEnum {
 
     public void initEnum(AbstractLogicalOperator op, boolean cboMode, boolean cboTestMode, int numberOfFromTerms,
             List<Pair<EmptyTupleSourceOperator, DataSourceScanOperator>> emptyTupleAndDataSourceOps,
-            Map<EmptyTupleSourceOperator, ILogicalOperator> joinLeafInputsHashMap,
-            Map<DataSourceScanOperator, EmptyTupleSourceOperator> dataSourceEmptyTupleHashMap,
-            List<ILogicalOperator> internalEdges, List<ILogicalOperator> joinOps, IOptimizationContext context) {
+            Map<EmptyTupleSourceOperator, ILogicalOperator> joinLeafInputsHashMap, List<ILogicalOperator> joinOps,
+            List<AssignOperator> assignOps, IOptimizationContext context) {
         this.singleDatasetPreds = new ArrayList<>();
         this.joinConditions = new ArrayList<>();
-        this.internalEdges = new ArrayList<>();
+        this.assignOps = new ArrayList<>();
+        this.joinHints = new HashMap<>();
         this.allPlans = new ArrayList<>();
         this.numberOfTerms = numberOfFromTerms;
         this.cboMode = cboMode;
@@ -119,8 +123,7 @@ public class JoinEnum {
         this.physOptConfig = context.getPhysicalOptimizationConfig();
         this.emptyTupleAndDataSourceOps = emptyTupleAndDataSourceOps;
         this.joinLeafInputsHashMap = joinLeafInputsHashMap;
-        this.dataSourceEmptyTupleHashMap = dataSourceEmptyTupleHashMap;
-        this.internalEdges = internalEdges;
+        this.assignOps = assignOps;
         this.joinOps = joinOps;
         this.op = op;
         this.forceJoinOrderMode = getForceJoinOrderMode(context);
@@ -166,10 +169,6 @@ public class JoinEnum {
 
     public Map<EmptyTupleSourceOperator, ILogicalOperator> getJoinLeafInputsHashMap() {
         return joinLeafInputsHashMap;
-    }
-
-    public Map<DataSourceScanOperator, EmptyTupleSourceOperator> getDataSourceEmptyTupleHashMap() {
-        return dataSourceEmptyTupleHashMap;
     }
 
     public ILogicalOperator findLeafInput(List<LogicalVariable> logicalVars) throws AlgebricksException {
@@ -298,6 +297,25 @@ public class JoinEnum {
         return null;
     }
 
+    public boolean findUseIndexHint(AbstractFunctionCallExpression condition) {
+        if (condition.getFunctionIdentifier().equals(AlgebricksBuiltinFunctions.AND)) {
+            for (int i = 0; i < condition.getArguments().size(); i++) {
+                ILogicalExpression expr = condition.getArguments().get(i).getValue();
+                if (expr.getExpressionTag().equals(LogicalExpressionTag.FUNCTION_CALL)) {
+                    AbstractFunctionCallExpression AFCexpr = (AbstractFunctionCallExpression) expr;
+                    if (AFCexpr.hasAnnotation(SecondaryIndexSearchPreferenceAnnotation.class)) {
+                        return true;
+                    }
+                }
+            }
+        } else if (condition.getExpressionTag().equals(LogicalExpressionTag.FUNCTION_CALL)) {
+            if (condition.hasAnnotation(SecondaryIndexSearchPreferenceAnnotation.class)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public int findJoinNodeIndexByName(String name) {
         for (int i = 1; i <= this.numberOfTerms; i++) {
             if (name.equals(jnArray[i].datasetNames.get(0))) {
@@ -339,16 +357,14 @@ public class JoinEnum {
         }
 
         // so this variable must be in an internal edge in an assign statement. Find the RHS variables there
-        for (ILogicalOperator op : this.internalEdges) {
-            if (op.getOperatorTag() == LogicalOperatorTag.ASSIGN) {
-                List<LogicalVariable> vars2 = new ArrayList<>();
-                VariableUtilities.getUsedVariables(op, vars2);
-                int bits = 0;
-                for (LogicalVariable lv2 : vars2) {
-                    bits |= findBits(lv2);
-                }
-                return bits;
+        for (AssignOperator op : this.assignOps) {
+            List<LogicalVariable> vars2 = new ArrayList<>();
+            VariableUtilities.getUsedVariables(op, vars2);
+            int bits = 0;
+            for (LogicalVariable lv2 : vars2) {
+                bits |= findBits(lv2);
             }
+            return bits;
         }
         // should never reach this because every variable must exist in some leaf input.
         return JoinNode.NO_JN;
@@ -387,8 +403,7 @@ public class JoinEnum {
             usedVars.clear();
             ILogicalExpression expr = jc.joinCondition;
             expr.getUsedVariables(usedVars);
-            for (ILogicalOperator ie : internalEdges) {
-                AssignOperator aOp = (AssignOperator) ie;
+            for (AssignOperator aOp : assignOps) {
                 for (int i = 0; i < aOp.getVariables().size(); i++) {
                     if (usedVars.contains(aOp.getVariables().get(i))) {
                         OperatorManipulationUtil.replaceVarWithExpr((AbstractFunctionCallExpression) expr,
@@ -588,6 +603,9 @@ public class JoinEnum {
                     Collections.sort(jn.aliases);
                     jn.size = jnI.size + jnJ.size;
                     jn.cardinality = jn.computeJoinCardinality();
+                    if (jn.cardinality < 2.1) {
+                        jn.cardinality = 2.1; // for keeping CP and HJ cost formulas happy.
+                    }
                 } else {
                     addPlansToThisJn = jnNewBits.jnIndex;
                 }
@@ -695,6 +713,9 @@ public class JoinEnum {
                 }
                 // multiply by the respective predicate selectivities
                 jn.cardinality = jn.origCardinality * stats.getSelectivity(leafInput, false);
+                if (jn.cardinality < 2.1) {
+                    jn.cardinality = 2.1; // for keeping CP and HJ cost formulas happy.
+                }
             } else {
                 // could be unnest or assign
                 jn.datasetNames = new ArrayList<>(Collections.singleton("unnestOrAssign"));

@@ -37,29 +37,30 @@ import org.apache.asterix.optimizer.rules.pushdown.schema.IExpectedSchemaNodeVis
 import org.apache.asterix.optimizer.rules.pushdown.schema.ObjectExpectedSchemaNode;
 import org.apache.asterix.optimizer.rules.pushdown.schema.RootExpectedSchemaNode;
 import org.apache.asterix.optimizer.rules.pushdown.schema.UnionExpectedSchemaNode;
-import org.apache.asterix.runtime.projection.DataProjectionInfo;
+import org.apache.asterix.runtime.projection.DataProjectionFiltrationInfo;
 import org.apache.asterix.runtime.projection.FunctionCallInformation;
+import org.apache.asterix.runtime.projection.ProjectionFiltrationWarningFactoryProvider;
 
 /**
  * This visitor translates the {@link IExpectedSchemaNode} to {@link IAType} record.
  * The {@link IAType#getTypeName()} is used to map each {@link IAType} to its {@link FunctionCallInformation}
  */
-class ExpectedSchemaNodeToIATypeTranslatorVisitor implements IExpectedSchemaNodeVisitor<IAType, String> {
+public class ExpectedSchemaNodeToIATypeTranslatorVisitor implements IExpectedSchemaNodeVisitor<IAType, String> {
     //Map typeName to source information
-    private Map<String, FunctionCallInformation> sourceInformationMap;
+    private final Map<String, FunctionCallInformation> sourceInformationMap;
     //To give a unique name for each type
     private int counter;
 
-    public void reset(Map<String, FunctionCallInformation> sourceInformationMap) {
+    public ExpectedSchemaNodeToIATypeTranslatorVisitor(Map<String, FunctionCallInformation> sourceInformationMap) {
         this.sourceInformationMap = sourceInformationMap;
     }
 
     @Override
     public IAType visit(RootExpectedSchemaNode node, String arg) {
         if (node.isAllFields()) {
-            return DataProjectionInfo.ALL_FIELDS_TYPE;
+            return DataProjectionFiltrationInfo.ALL_FIELDS_TYPE;
         } else if (node.isEmpty()) {
-            return DataProjectionInfo.EMPTY_TYPE;
+            return DataProjectionFiltrationInfo.EMPTY_TYPE;
         }
         return createRecordType(node, String.valueOf(counter++));
     }
@@ -109,6 +110,7 @@ class ExpectedSchemaNodeToIATypeTranslatorVisitor implements IExpectedSchemaNode
     }
 
     private FunctionCallInformation createFunctionCallInformation(IExpectedSchemaNode node) {
-        return new FunctionCallInformation(node.getFunctionName(), node.getSourceLocation());
+        return new FunctionCallInformation(node.getFunctionName(), node.getSourceLocation(),
+                ProjectionFiltrationWarningFactoryProvider.TYPE_MISMATCH_FACTORY);
     }
 }

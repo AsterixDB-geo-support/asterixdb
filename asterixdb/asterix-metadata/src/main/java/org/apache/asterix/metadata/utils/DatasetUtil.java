@@ -30,6 +30,8 @@ import java.util.UUID;
 
 import org.apache.asterix.builders.IARecordBuilder;
 import org.apache.asterix.builders.RecordBuilder;
+import org.apache.asterix.column.util.ColumnSecondaryIndexSchemaUtil;
+import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.config.DatasetConfig.DatasetType;
 import org.apache.asterix.common.context.CorrelatedPrefixMergePolicyFactory;
 import org.apache.asterix.common.context.IStorageComponentProvider;
@@ -41,7 +43,6 @@ import org.apache.asterix.common.exceptions.AsterixException;
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.metadata.DataverseName;
 import org.apache.asterix.common.transactions.IRecoveryManager;
-import org.apache.asterix.external.indexing.IndexingConstants;
 import org.apache.asterix.formats.base.IDataFormat;
 import org.apache.asterix.formats.nontagged.SerializerDeserializerProvider;
 import org.apache.asterix.formats.nontagged.TypeTraitProvider;
@@ -60,7 +61,9 @@ import org.apache.asterix.om.base.AString;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.om.types.IAType;
+import org.apache.asterix.om.types.visitor.SimpleStringBuilderForIATypeVisitor;
 import org.apache.asterix.runtime.operators.LSMPrimaryUpsertOperatorDescriptor;
+import org.apache.asterix.runtime.projection.DataProjectionFiltrationInfo;
 import org.apache.asterix.runtime.utils.RuntimeUtils;
 import org.apache.asterix.transaction.management.opcallbacks.PrimaryIndexInstantSearchOperationCallbackFactory;
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksPartitionConstraint;
@@ -70,8 +73,10 @@ import org.apache.hyracks.algebricks.common.utils.Pair;
 import org.apache.hyracks.algebricks.data.IBinaryComparatorFactoryProvider;
 import org.apache.hyracks.api.dataflow.IOperatorDescriptor;
 import org.apache.hyracks.api.dataflow.value.IBinaryComparatorFactory;
+import org.apache.hyracks.api.dataflow.value.IBinaryHashFunctionFactory;
 import org.apache.hyracks.api.dataflow.value.IMissingWriterFactory;
 import org.apache.hyracks.api.dataflow.value.ISerializerDeserializer;
+import org.apache.hyracks.api.dataflow.value.ITuplePartitionerFactory;
 import org.apache.hyracks.api.dataflow.value.ITypeTraits;
 import org.apache.hyracks.api.dataflow.value.RecordDescriptor;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
@@ -80,6 +85,7 @@ import org.apache.hyracks.api.job.JobSpecification;
 import org.apache.hyracks.data.std.util.ArrayBackedValueStorage;
 import org.apache.hyracks.dataflow.common.comm.io.ArrayTupleBuilder;
 import org.apache.hyracks.dataflow.common.data.marshalling.IntegerSerializerDeserializer;
+import org.apache.hyracks.dataflow.common.data.partition.FieldHashPartitionerFactory;
 import org.apache.hyracks.dataflow.std.file.IFileSplitProvider;
 import org.apache.hyracks.dataflow.std.misc.ConstantTupleSourceOperatorDescriptor;
 import org.apache.hyracks.storage.am.btree.dataflow.BTreeSearchOperatorDescriptor;
@@ -90,10 +96,13 @@ import org.apache.hyracks.storage.am.common.dataflow.IIndexDataflowHelperFactory
 import org.apache.hyracks.storage.am.common.dataflow.IndexCreateOperatorDescriptor;
 import org.apache.hyracks.storage.am.common.dataflow.IndexDataflowHelperFactory;
 import org.apache.hyracks.storage.am.common.dataflow.IndexDropOperatorDescriptor;
+import org.apache.hyracks.storage.am.common.impls.DefaultTupleProjectorFactory;
 import org.apache.hyracks.storage.am.common.ophelpers.IndexOperation;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMMergePolicyFactory;
 import org.apache.hyracks.storage.am.lsm.common.dataflow.LSMTreeIndexCompactOperatorDescriptor;
 import org.apache.hyracks.storage.common.IResourceFactory;
+import org.apache.hyracks.storage.common.projection.ITupleProjectorFactory;
+import org.apache.hyracks.util.LogRedactionUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -222,12 +231,9 @@ public class DatasetUtil {
      * e.g. if the field name happens to be equal to the key name but the field is coming from the data record while
      * the key is coming from the meta record.
      *
-     * @param keySourceIndicator
-     *            indicates where the key is coming from, 1 from meta record, 0 from data record
-     * @param keyIndex
-     *            the key index we're checking the field against
-     * @param fieldFromMeta
-     *            whether the field is coming from the meta record or the data record
+     * @param keySourceIndicator indicates where the key is coming from, 1 from meta record, 0 from data record
+     * @param keyIndex           the key index we're checking the field against
+     * @param fieldFromMeta      whether the field is coming from the meta record or the data record
      * @return true if the key source matches the field source. Otherwise, false.
      */
     private static boolean keySourceMatches(List<Integer> keySourceIndicator, int keyIndex, boolean fieldFromMeta) {
@@ -307,27 +313,13 @@ public class DatasetUtil {
                 metadataProvider.getSplitProviderAndConstraints(dataset);
         IIndexDataflowHelperFactory indexHelperFactory = new IndexDataflowHelperFactory(
                 metadataProvider.getStorageComponentProvider().getStorageManager(), splitsAndConstraint.first);
+        int[][] partitionsMap = metadataProvider.getPartitionsMap(dataset);
         IndexDropOperatorDescriptor primaryBtreeDrop =
-                new IndexDropOperatorDescriptor(specPrimary, indexHelperFactory, options);
+                new IndexDropOperatorDescriptor(specPrimary, indexHelperFactory, options, partitionsMap);
         AlgebricksPartitionConstraintHelper.setPartitionConstraintInJobSpec(specPrimary, primaryBtreeDrop,
                 splitsAndConstraint.second);
         specPrimary.addRoot(primaryBtreeDrop);
         return specPrimary;
-    }
-
-    public static JobSpecification buildDropFilesIndexJobSpec(MetadataProvider metadataProvider, Dataset dataset)
-            throws AlgebricksException {
-        String indexName = IndexingConstants.getFilesIndexName(dataset.getDatasetName());
-        JobSpecification spec = RuntimeUtils.createJobSpecification(metadataProvider.getApplicationContext());
-        Pair<IFileSplitProvider, AlgebricksPartitionConstraint> splitsAndConstraint =
-                metadataProvider.getSplitProviderAndConstraints(dataset, indexName);
-        IIndexDataflowHelperFactory indexHelperFactory = new IndexDataflowHelperFactory(
-                metadataProvider.getStorageComponentProvider().getStorageManager(), splitsAndConstraint.first);
-        IndexDropOperatorDescriptor btreeDrop = new IndexDropOperatorDescriptor(spec, indexHelperFactory);
-        AlgebricksPartitionConstraintHelper.setPartitionConstraintInJobSpec(spec, btreeDrop,
-                splitsAndConstraint.second);
-        spec.addRoot(btreeDrop);
-        return spec;
     }
 
     public static JobSpecification createDatasetJobSpec(Dataset dataset, MetadataProvider metadataProvider)
@@ -339,6 +331,8 @@ public class DatasetUtil {
         if (dataset.hasMetaPart()) {
             metaItemType = (ARecordType) metadataProvider.findMetaType(dataset);
         }
+        itemType = (ARecordType) metadataProvider.findTypeForDatasetWithoutType(itemType, metaItemType, dataset);
+
         JobSpecification spec = RuntimeUtils.createJobSpecification(metadataProvider.getApplicationContext());
         Pair<IFileSplitProvider, AlgebricksPartitionConstraint> splitsAndConstraint =
                 metadataProvider.getSplitProviderAndConstraints(dataset);
@@ -347,7 +341,7 @@ public class DatasetUtil {
         for (int i = 0; i < fs.length; i++) {
             sb.append(fs[i] + " ");
         }
-        LOGGER.info("CREATING File Splits: " + sb.toString());
+        LOGGER.info("CREATING File Splits: " + sb);
         Pair<ILSMMergePolicyFactory, Map<String, String>> compactionInfo =
                 DatasetUtil.getMergePolicyFactory(dataset, metadataProvider.getMetadataTxnContext());
         // prepare a LocalResourceMetadata which will be stored in NC's local resource
@@ -357,7 +351,9 @@ public class DatasetUtil {
         IndexBuilderFactory indexBuilderFactory =
                 new IndexBuilderFactory(metadataProvider.getStorageComponentProvider().getStorageManager(),
                         splitsAndConstraint.first, resourceFactory, true);
-        IndexCreateOperatorDescriptor indexCreateOp = new IndexCreateOperatorDescriptor(spec, indexBuilderFactory);
+        int[][] partitionsMap = metadataProvider.getPartitionsMap(dataset);
+        IndexCreateOperatorDescriptor indexCreateOp =
+                new IndexCreateOperatorDescriptor(spec, indexBuilderFactory, partitionsMap);
         AlgebricksPartitionConstraintHelper.setPartitionConstraintInJobSpec(spec, indexCreateOp,
                 splitsAndConstraint.second);
         spec.addRoot(indexCreateOp);
@@ -389,17 +385,19 @@ public class DatasetUtil {
     /**
      * Creates a primary index scan operator for a given dataset.
      *
-     * @param spec,
-     *            the job specification.
-     * @param metadataProvider,
-     *            the metadata provider.
-     * @param dataset,
-     *            the dataset to scan.
+     * @param spec,             the job specification.
+     * @param metadataProvider, the metadata provider.
+     * @param dataset,          the dataset to scan.
      * @return a primary index scan operator.
      * @throws AlgebricksException
      */
     public static IOperatorDescriptor createPrimaryIndexScanOp(JobSpecification spec, MetadataProvider metadataProvider,
             Dataset dataset) throws AlgebricksException {
+        return createPrimaryIndexScanOp(spec, metadataProvider, dataset, DefaultTupleProjectorFactory.INSTANCE);
+    }
+
+    public static IOperatorDescriptor createPrimaryIndexScanOp(JobSpecification spec, MetadataProvider metadataProvider,
+            Dataset dataset, ITupleProjectorFactory projectorFactory) throws AlgebricksException {
         Pair<IFileSplitProvider, AlgebricksPartitionConstraint> primarySplitsAndConstraint =
                 metadataProvider.getSplitProviderAndConstraints(dataset);
         IFileSplitProvider primaryFileSplitProvider = primarySplitsAndConstraint.first;
@@ -414,9 +412,11 @@ public class DatasetUtil {
                 IRecoveryManager.ResourceType.LSM_BTREE);
         IndexDataflowHelperFactory indexHelperFactory = new IndexDataflowHelperFactory(
                 metadataProvider.getStorageComponentProvider().getStorageManager(), primaryFileSplitProvider);
+        int[][] partitionsMap = metadataProvider.getPartitionsMap(dataset);
         BTreeSearchOperatorDescriptor primarySearchOp = new BTreeSearchOperatorDescriptor(spec,
                 dataset.getPrimaryRecordDescriptor(metadataProvider), lowKeyFields, highKeyFields, true, true,
-                indexHelperFactory, false, false, null, searchCallbackFactory, null, null, false, null);
+                indexHelperFactory, false, false, null, searchCallbackFactory, null, null, false, null, null, -1, false,
+                null, null, projectorFactory, null, partitionsMap);
         AlgebricksPartitionConstraintHelper.setPartitionConstraintInJobSpec(spec, primarySearchOp,
                 primaryPartitionConstraint);
         return primarySearchOp;
@@ -425,18 +425,12 @@ public class DatasetUtil {
     /**
      * Creates a primary index upsert operator for a given dataset.
      *
-     * @param spec,
-     *            the job specification.
-     * @param metadataProvider,
-     *            the metadata provider.
-     * @param dataset,
-     *            the dataset to upsert.
-     * @param inputRecordDesc,the
-     *            record descriptor for an input tuple.
-     * @param fieldPermutation,
-     *            the field permutation according to the input.
-     * @param missingWriterFactory,
-     *            the factory for customizing missing value serialization.
+     * @param spec,                 the job specification.
+     * @param metadataProvider,     the metadata provider.
+     * @param dataset,              the dataset to upsert.
+     * @param inputRecordDesc,the   record descriptor for an input tuple.
+     * @param fieldPermutation,     the field permutation according to the input.
+     * @param missingWriterFactory, the factory for customizing missing value serialization.
      * @return a primary index scan operator and its location constraints.
      * @throws AlgebricksException
      */
@@ -447,6 +441,8 @@ public class DatasetUtil {
         int numFilterFields = DatasetUtil.getFilterField(dataset) == null ? 0 : 1;
         ARecordType itemType = (ARecordType) metadataProvider.findType(dataset);
         ARecordType metaItemType = (ARecordType) metadataProvider.findMetaType(dataset);
+        itemType = (ARecordType) metadataProvider.findTypeForDatasetWithoutType(itemType, metaItemType, dataset);
+
         Index primaryIndex = metadataProvider.getIndex(dataset.getDataverseName(), dataset.getDatasetName(),
                 dataset.getDatasetName());
         Pair<IFileSplitProvider, AlgebricksPartitionConstraint> splitsAndConstraint =
@@ -454,8 +450,10 @@ public class DatasetUtil {
 
         // prepare callback
         int[] primaryKeyFields = new int[numKeys];
+        int[] pkFields = new int[numKeys];
         for (int i = 0; i < numKeys; i++) {
             primaryKeyFields[i] = i;
+            pkFields[i] = fieldPermutation[i];
         }
         boolean hasSecondaries =
                 metadataProvider.getDatasetIndexes(dataset.getDataverseName(), dataset.getDatasetName()).size() > 1;
@@ -515,22 +513,79 @@ public class DatasetUtil {
             outputSerDes[j + f] = inputRecordDesc.getFields()[j];
         }
         RecordDescriptor outputRecordDesc = new RecordDescriptor(outputSerDes, outputTypeTraits);
+
+        // This allows to project only the indexed fields instead of the entirety of the record
+        ARecordType requestedType = getPrevRecordType(metadataProvider, dataset, itemType);
+        ITupleProjectorFactory projectorFactory = IndexUtil.createUpsertTupleProjectorFactory(
+                dataset.getDatasetFormatInfo(), requestedType, itemType, metaItemType, numKeys);
+
+        int numPartitions = MetadataProvider.getNumPartitions(splitsAndConstraint.second);
+        int[][] partitionsMap = MetadataProvider.getPartitionsMap(numPartitions);
+        IBinaryHashFunctionFactory[] pkHashFunFactories = dataset.getPrimaryHashFunctionFactories(metadataProvider);
+        ITuplePartitionerFactory tuplePartitionerFactory =
+                new FieldHashPartitionerFactory(pkFields, pkHashFunFactories, numPartitions);
+
         op = new LSMPrimaryUpsertOperatorDescriptor(spec, outputRecordDesc, fieldPermutation, idfh,
                 missingWriterFactory, modificationCallbackFactory, searchCallbackFactory,
                 dataset.getFrameOpCallbackFactory(metadataProvider), numKeys, filterSourceIndicator, filterItemType,
-                fieldIdx, hasSecondaries);
+                fieldIdx, hasSecondaries, projectorFactory, tuplePartitionerFactory, partitionsMap);
         return new Pair<>(op, splitsAndConstraint.second);
+    }
+
+    /**
+     * Returns a type that contains indexed fields for columnar datasets.
+     * The type is used retrieve the previous record with only the indexed fields -- minimizing the
+     * I/O cost for point lookups.
+     *
+     * @param metadataProvider metadata provider
+     * @param dataset          the dataset to upsert to
+     * @param itemType         dataset type
+     * @return a type with the requested fields
+     */
+    private static ARecordType getPrevRecordType(MetadataProvider metadataProvider, Dataset dataset,
+            ARecordType itemType) throws AlgebricksException {
+        if (dataset.getDatasetFormatInfo().getFormat() == DatasetConfig.DatasetFormat.ROW) {
+            return itemType;
+        }
+
+        // Column
+        List<Index> secondaryIndexes =
+                metadataProvider.getDatasetIndexes(dataset.getDataverseName(), dataset.getDatasetName());
+        List<ARecordType> indexPaths = new ArrayList<>();
+
+        for (Index index : secondaryIndexes) {
+            if (!index.isSecondaryIndex() || index.isPrimaryKeyIndex() || index.isSampleIndex()) {
+                continue;
+            }
+
+            if (index.getIndexType() == DatasetConfig.IndexType.BTREE) {
+                Index.ValueIndexDetails indexDetails = (Index.ValueIndexDetails) index.getIndexDetails();
+                indexPaths.add(indexDetails.getIndexExpectedType());
+            } else if (index.getIndexType() == DatasetConfig.IndexType.ARRAY) {
+                Index.ArrayIndexDetails indexDetails = (Index.ArrayIndexDetails) index.getIndexDetails();
+                indexPaths.add(indexDetails.getIndexExpectedType());
+            }
+        }
+
+        ARecordType result = indexPaths.isEmpty() ? DataProjectionFiltrationInfo.EMPTY_TYPE
+                : ColumnSecondaryIndexSchemaUtil.merge(indexPaths);
+
+        if (LOGGER.isInfoEnabled() && result != DataProjectionFiltrationInfo.EMPTY_TYPE) {
+            SimpleStringBuilderForIATypeVisitor schemaPrinter = new SimpleStringBuilderForIATypeVisitor();
+            StringBuilder builder = new StringBuilder();
+            result.accept(schemaPrinter, builder);
+            LOGGER.info("Upsert previous tuple schema: {}", LogRedactionUtil.userData(builder.toString()));
+        }
+
+        return result;
     }
 
     /**
      * Creates a dummy key provider operator for the primary index scan.
      *
-     * @param spec,
-     *            the job specification.
-     * @param dataset,
-     *            the dataset to scan.
-     * @param metadataProvider,
-     *            the metadata provider.
+     * @param spec,             the job specification.
+     * @param dataset,          the dataset to scan.
+     * @param metadataProvider, the metadata provider.
      * @return a dummy key provider operator.
      * @throws AlgebricksException
      */
@@ -613,7 +668,7 @@ public class DatasetUtil {
         appCtx.getMetadataLockManager().acquireNodeGroupWriteLock(metadataProvider.getLocks(), nodeGroup);
         NodeGroup ng = MetadataManager.INSTANCE.getNodegroup(mdTxnCtx, nodeGroup);
         if (ng != null) {
-            nodeGroup = nodeGroup + "_" + UUID.randomUUID().toString();
+            nodeGroup = nodeGroup + "_" + UUID.randomUUID();
             appCtx.getMetadataLockManager().acquireNodeGroupWriteLock(metadataProvider.getLocks(), nodeGroup);
         }
         MetadataManager.INSTANCE.addNodegroup(mdTxnCtx, NodeGroup.createOrdered(nodeGroup, new ArrayList<>(ncNames)));

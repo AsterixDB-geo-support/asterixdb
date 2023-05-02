@@ -34,7 +34,7 @@ import org.apache.asterix.om.types.AUnionType;
 import org.apache.asterix.om.types.AbstractCollectionType;
 import org.apache.asterix.om.types.IAType;
 import org.apache.asterix.om.types.IATypeVisitor;
-import org.apache.asterix.runtime.projection.DataProjectionInfo;
+import org.apache.asterix.runtime.projection.DataProjectionFiltrationInfo;
 import org.apache.asterix.runtime.projection.FunctionCallInformation;
 import org.apache.hyracks.api.exceptions.SourceLocation;
 import org.apache.hyracks.api.exceptions.Warning;
@@ -67,9 +67,9 @@ public class AsterixTypeToParquetTypeVisitor implements IATypeVisitor<Type, Type
 
     public MessageType clipType(ARecordType rootType, MessageType fileSchema,
             Map<String, FunctionCallInformation> funcInfo) {
-        if (rootType == DataProjectionInfo.EMPTY_TYPE) {
+        if (rootType == DataProjectionFiltrationInfo.EMPTY_TYPE) {
             return EMPTY_PARQUET_MESSAGE;
-        } else if (rootType == DataProjectionInfo.ALL_FIELDS_TYPE) {
+        } else if (rootType == DataProjectionFiltrationInfo.ALL_FIELDS_TYPE) {
             return fileSchema;
         }
         Types.MessageTypeBuilder builder = Types.buildMessage();
@@ -174,7 +174,7 @@ public class AsterixTypeToParquetTypeVisitor implements IATypeVisitor<Type, Type
             //If no warning is created, then it means it has been reported
             Warning warning = null;
             if (actualType != ATypeTag.SYSTEM_NULL) {
-                warning = info.createTypeMismatchWarning(expectedType, actualType);
+                warning = info.createWarning(expectedType, actualType);
             }
             if (warning != null) {
                 //New warning that we saw for the first time. We should report it.

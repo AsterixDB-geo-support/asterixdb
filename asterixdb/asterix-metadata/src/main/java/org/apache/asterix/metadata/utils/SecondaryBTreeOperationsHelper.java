@@ -23,7 +23,6 @@ import java.util.List;
 import org.apache.asterix.common.config.DatasetConfig.DatasetType;
 import org.apache.asterix.common.utils.StorageConstants;
 import org.apache.asterix.external.indexing.IndexingConstants;
-import org.apache.asterix.external.operators.ExternalScanOperatorDescriptor;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Dataset;
 import org.apache.asterix.metadata.entities.Index;
@@ -48,11 +47,10 @@ import org.apache.hyracks.api.dataflow.value.ITypeTraits;
 import org.apache.hyracks.api.dataflow.value.RecordDescriptor;
 import org.apache.hyracks.api.exceptions.SourceLocation;
 import org.apache.hyracks.api.job.JobSpecification;
-import org.apache.hyracks.dataflow.std.base.AbstractSingleActivityOperatorDescriptor;
 import org.apache.hyracks.dataflow.std.connectors.OneToOneConnectorDescriptor;
-import org.apache.hyracks.dataflow.std.sort.ExternalSortOperatorDescriptor;
 import org.apache.hyracks.storage.am.common.dataflow.IIndexDataflowHelperFactory;
 import org.apache.hyracks.storage.am.common.dataflow.IndexDataflowHelperFactory;
+import org.apache.hyracks.storage.common.projection.ITupleProjectorFactory;
 
 public class SecondaryBTreeOperationsHelper extends SecondaryTreeIndexOperationsHelper {
 
@@ -64,84 +62,40 @@ public class SecondaryBTreeOperationsHelper extends SecondaryTreeIndexOperations
     @Override
     public JobSpecification buildLoadingJobSpec() throws AlgebricksException {
         JobSpecification spec = RuntimeUtils.createJobSpecification(metadataProvider.getApplicationContext());
-        Index.ValueIndexDetails indexDetails = (Index.ValueIndexDetails) index.getIndexDetails();
-        int[] fieldPermutation = createFieldPermutationForBulkLoadOp(indexDetails.getKeyFieldNames().size());
-        IIndexDataflowHelperFactory dataflowHelperFactory = new IndexDataflowHelperFactory(
-                metadataProvider.getStorageComponentProvider().getStorageManager(), secondaryFileSplitProvider);
-        boolean excludeUnknown = excludeUnknownKeys(index, indexDetails, anySecondaryKeyIsNullable);
         if (dataset.getDatasetType() == DatasetType.EXTERNAL) {
-            /*
-             * In case of external data,
-             * this method is used to build loading jobs for both initial load on index creation
-             * and transaction load on dataset referesh
-             */
-
-            // Create external indexing scan operator
-            ExternalScanOperatorDescriptor primaryScanOp = createExternalIndexingOp(spec);
-
-            // Assign op.
-            AlgebricksMetaOperatorDescriptor asterixAssignOp =
-                    createExternalAssignOp(spec, indexDetails.getKeyFieldNames().size(), secondaryRecDesc);
-
-            // If any of the secondary fields are nullable, then add a select op that filters nulls.
-            AlgebricksMetaOperatorDescriptor selectOp = null;
-            if (excludeUnknown) {
-                selectOp =
-                        createFilterAllUnknownsSelectOp(spec, indexDetails.getKeyFieldNames().size(), secondaryRecDesc);
-            }
-            // Sort by secondary keys.
-            ExternalSortOperatorDescriptor sortOp = createSortOp(spec, secondaryComparatorFactories, secondaryRecDesc);
-            // Create secondary BTree bulk load op.
-            AbstractSingleActivityOperatorDescriptor secondaryBulkLoadOp;
-            IOperatorDescriptor root;
-            if (externalFiles != null) {
-                // Transaction load
-                secondaryBulkLoadOp = createExternalIndexBulkModifyOp(spec, fieldPermutation, dataflowHelperFactory,
-                        StorageConstants.DEFAULT_TREE_FILL_FACTOR);
-            } else {
-                // Initial load
-                secondaryBulkLoadOp = createExternalIndexBulkLoadOp(spec, fieldPermutation, dataflowHelperFactory,
-                        StorageConstants.DEFAULT_TREE_FILL_FACTOR);
-            }
-            SinkRuntimeFactory sinkRuntimeFactory = new SinkRuntimeFactory();
-            sinkRuntimeFactory.setSourceLocation(sourceLoc);
-            AlgebricksMetaOperatorDescriptor metaOp = new AlgebricksMetaOperatorDescriptor(spec, 1, 0,
-                    new IPushRuntimeFactory[] { sinkRuntimeFactory }, new RecordDescriptor[] { secondaryRecDesc });
-            metaOp.setSourceLocation(sourceLoc);
-            spec.connect(new OneToOneConnectorDescriptor(spec), secondaryBulkLoadOp, 0, metaOp, 0);
-            root = metaOp;
-            spec.connect(new OneToOneConnectorDescriptor(spec), primaryScanOp, 0, asterixAssignOp, 0);
-            if (excludeUnknown) {
-                spec.connect(new OneToOneConnectorDescriptor(spec), asterixAssignOp, 0, selectOp, 0);
-                spec.connect(new OneToOneConnectorDescriptor(spec), selectOp, 0, sortOp, 0);
-            } else {
-                spec.connect(new OneToOneConnectorDescriptor(spec), asterixAssignOp, 0, sortOp, 0);
-            }
-            spec.connect(new OneToOneConnectorDescriptor(spec), sortOp, 0, secondaryBulkLoadOp, 0);
-            spec.addRoot(root);
-            spec.setConnectorPolicyAssignmentPolicy(new ConnectorPolicyAssignmentPolicy());
             return spec;
         } else {
+            Index.ValueIndexDetails indexDetails = (Index.ValueIndexDetails) index.getIndexDetails();
+            int numSecondaryKeys = getNumSecondaryKeys();
+            int[] fieldPermutation = createFieldPermutationForBulkLoadOp(numSecondaryKeys);
+            int[] pkFields = createPkFieldPermutationForBulkLoadOp(fieldPermutation, numSecondaryKeys);
+            IIndexDataflowHelperFactory dataflowHelperFactory = new IndexDataflowHelperFactory(
+                    metadataProvider.getStorageComponentProvider().getStorageManager(), secondaryFileSplitProvider);
+            boolean excludeUnknown = excludeUnknownKeys(index, indexDetails, anySecondaryKeyIsNullable);
             // job spec:
             // key provider -> primary idx scan -> cast assign -> (select)? -> (sort)? -> bulk load -> sink
             IndexUtil.bindJobEventListener(spec, metadataProvider);
 
+            // if format == column, then project only the indexed fields
+            ITupleProjectorFactory projectorFactory =
+                    IndexUtil.createPrimaryIndexScanTupleProjectorFactory(dataset.getDatasetFormatInfo(),
+                            indexDetails.getIndexExpectedType(), itemType, metaType, numPrimaryKeys);
             // dummy key provider ----> primary index scan
             IOperatorDescriptor sourceOp = DatasetUtil.createDummyKeyProviderOp(spec, dataset, metadataProvider);
-            IOperatorDescriptor targetOp = DatasetUtil.createPrimaryIndexScanOp(spec, metadataProvider, dataset);
+            IOperatorDescriptor targetOp =
+                    DatasetUtil.createPrimaryIndexScanOp(spec, metadataProvider, dataset, projectorFactory);
             spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
 
             sourceOp = targetOp;
             // primary index ----> cast assign op (produces the secondary index entry)
-            targetOp = createAssignOp(spec, indexDetails.getKeyFieldNames().size(), secondaryRecDesc);
+            targetOp = createAssignOp(spec, numSecondaryKeys, secondaryRecDesc);
             spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
 
             sourceOp = targetOp;
             if (excludeUnknown) {
                 // if any of the secondary fields are nullable, then add a select op that filters nulls.
                 // assign op ----> select op
-                targetOp =
-                        createFilterAllUnknownsSelectOp(spec, indexDetails.getKeyFieldNames().size(), secondaryRecDesc);
+                targetOp = createFilterAllUnknownsSelectOp(spec, numSecondaryKeys, secondaryRecDesc);
                 spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
                 sourceOp = targetOp;
             }
@@ -155,7 +109,7 @@ public class SecondaryBTreeOperationsHelper extends SecondaryTreeIndexOperations
 
             // cast assign op OR select op OR sort op ----> bulk load op
             targetOp = createTreeIndexBulkLoadOp(spec, fieldPermutation, dataflowHelperFactory,
-                    StorageConstants.DEFAULT_TREE_FILL_FACTOR);
+                    StorageConstants.DEFAULT_TREE_FILL_FACTOR, pkFields);
             spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
 
             // bulk load op ----> sink op
@@ -178,21 +132,21 @@ public class SecondaryBTreeOperationsHelper extends SecondaryTreeIndexOperations
     }
 
     /**
-     *      ======
-     *     |  SK  |             Bloom filter
-     *      ======
-     *      ====== ======
-     *     |  SK  |  PK  |      comparators, type traits
-     *      ====== ======
-     *      ====== ........
-     *     |  SK  | Filter |    field access evaluators
-     *      ====== ........
-     *      ====== ====== ........
-     *     |  SK  |  PK  | Filter |   record fields
-     *      ====== ====== ........
-     *      ====== ========= ........ ........
-     *     |  PK  | Payload |  Meta  | Filter | enforced record
-     *      ====== ========= ........ ........
+     * ======
+     * |  SK  |             Bloom filter
+     * ======
+     * ====== ======
+     * |  SK  |  PK  |      comparators, type traits
+     * ====== ======
+     * ====== ........
+     * |  SK  | Filter |    field access evaluators
+     * ====== ........
+     * ====== ====== ........
+     * |  SK  |  PK  | Filter |   record fields
+     * ====== ====== ........
+     * ====== ========= ........ ........
+     * |  PK  | Payload |  Meta  | Filter | enforced record
+     * ====== ========= ........ ........
      */
     @Override
     protected void setSecondaryRecDescAndComparators() throws AlgebricksException {

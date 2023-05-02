@@ -68,6 +68,15 @@ public class AdmObjectNode implements IAdmNode {
         return children.get(fieldName);
     }
 
+    public IAdmNode getOrDefault(String fieldName, IAdmNode defaultValue) {
+        IAdmNode node = get(fieldName);
+        return node != null ? node : defaultValue;
+    }
+
+    public IAdmNode getOrEmpty(String fieldName) {
+        return children.get(fieldName);
+    }
+
     public Set<String> getFieldNames() {
         return children.keySet();
     }
@@ -160,6 +169,27 @@ public class AdmObjectNode implements IAdmNode {
             return null;
         }
         return ((AdmStringNode) node).get();
+    }
+
+    public String getOptionalString(String field, String defaultValue) {
+        String value = getOptionalString(field);
+        return value != null ? value : defaultValue;
+    }
+
+    public int getOptionalInt(String field, int defaultValue) {
+        final IAdmNode node = get(field);
+        if (node == null) {
+            return defaultValue;
+        }
+        return (int) ((AdmBigIntNode) node).get();
+    }
+
+    public float getOptionalFloat(String field, float defaultValue) {
+        final IAdmNode node = get(field);
+        if (node == null) {
+            return defaultValue;
+        }
+        return (float) ((AdmDoubleNode) node).get();
     }
 
     public static String getString(AdmObjectNode openFields, String field) throws HyracksDataException {

@@ -33,7 +33,7 @@ import org.apache.http.impl.client.HttpClients;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-class TestUtil {
+public class TestUtil {
 
     private static final String HOST = "127.0.0.1";
     private static final int PORT = 16001;

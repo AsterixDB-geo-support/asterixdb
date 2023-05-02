@@ -21,14 +21,18 @@ package org.apache.asterix.algebra.operators.physical;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.exceptions.CompilationException;
 import org.apache.asterix.common.exceptions.ErrorCode;
+import org.apache.asterix.metadata.dataset.DatasetFormatInfo;
 import org.apache.asterix.metadata.declared.DataSourceId;
 import org.apache.asterix.metadata.declared.DataSourceIndex;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Dataset;
 import org.apache.asterix.metadata.entities.Index;
+import org.apache.asterix.metadata.utils.IndexUtil;
 import org.apache.asterix.om.functions.BuiltinFunctions;
+import org.apache.asterix.om.types.ARecordType;
 import org.apache.asterix.optimizer.rules.am.BTreeJobGenParams;
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksPartitionConstraint;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
@@ -45,6 +49,7 @@ import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCa
 import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvironment;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IDataSourceIndex;
+import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionFiltrationInfo;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnnestMapOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.IOperatorSchema;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.LeftOuterUnnestMapOperator;
@@ -68,6 +73,7 @@ import org.apache.hyracks.api.dataflow.value.IMissingWriterFactory;
 import org.apache.hyracks.storage.am.common.api.ITupleFilterFactory;
 import org.apache.hyracks.storage.am.common.impls.DefaultTupleProjectorFactory;
 import org.apache.hyracks.storage.am.lsm.btree.impls.LSMBTreeBatchPointSearchCursor;
+import org.apache.hyracks.storage.common.projection.ITupleProjectorFactory;
 
 /**
  * Contributes the runtime operator for an unnest-map representing a BTree search.
@@ -78,7 +84,6 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
     private final List<LogicalVariable> highKeyVarList;
     private final boolean isPrimaryIndex;
     private final boolean isEqCondition;
-    private Object implConfig;
 
     public BTreeSearchPOperator(IDataSourceIndex<String, DataSourceId> idx, INodeDomain domain,
             boolean requiresBroadcast, boolean isPrimaryIndex, boolean isEqCondition,
@@ -88,14 +93,6 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
         this.isEqCondition = isEqCondition;
         this.lowKeyVarList = lowKeyVarList;
         this.highKeyVarList = highKeyVarList;
-    }
-
-    public void setImplConfig(Object implConfig) {
-        this.implConfig = implConfig;
-    }
-
-    public Object getImplConfig() {
-        return implConfig;
     }
 
     @Override
@@ -134,6 +131,7 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
         long outputLimit = -1;
         boolean retainMissing = false;
         IMissingWriterFactory nonMatchWriterFactory = null;
+        ITupleProjectorFactory tupleProjectorFactory = DefaultTupleProjectorFactory.INSTANCE;
         switch (unnestMap.getOperatorTag()) {
             case UNNEST_MAP:
                 UnnestMapOperator unnestMapOp = (UnnestMapOperator) unnestMap;
@@ -141,6 +139,17 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
                 if (unnestMapOp.getSelectCondition() != null) {
                     tupleFilterFactory = metadataProvider.createTupleFilterFactory(new IOperatorSchema[] { opSchema },
                             typeEnv, unnestMapOp.getSelectCondition().getValue(), context);
+                }
+                DatasetFormatInfo formatInfo = dataset.getDatasetFormatInfo();
+                if (isPrimaryIndex && formatInfo.getFormat() == DatasetConfig.DatasetFormat.COLUMN) {
+                    IProjectionFiltrationInfo<?> projectionInfo = unnestMapOp.getDatasetProjectionInfo();
+                    IProjectionFiltrationInfo<?> metaProjectionInfo = unnestMapOp.getMetaProjectionInfo();
+                    ARecordType datasetType = (ARecordType) metadataProvider.findType(dataset);
+                    ARecordType metaItemType = (ARecordType) metadataProvider.findMetaType(dataset);
+                    datasetType = (ARecordType) metadataProvider.findTypeForDatasetWithoutType(datasetType,
+                            metaItemType, dataset);
+                    tupleProjectorFactory = IndexUtil.createTupleProjectorFactory(formatInfo, projectionInfo,
+                            metaProjectionInfo, datasetType, metaItemType, dataset.getPrimaryKeys().size());
                 }
                 break;
             case LEFT_OUTER_UNNEST_MAP:
@@ -155,14 +164,14 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
                         String.valueOf(unnestMap.getOperatorTag()));
         }
 
-        Pair<IOperatorDescriptor, AlgebricksPartitionConstraint> btreeSearch = metadataProvider.buildBtreeRuntime(
+        Pair<IOperatorDescriptor, AlgebricksPartitionConstraint> btreeSearch = metadataProvider.getBtreeSearchRuntime(
                 builder.getJobSpec(), opSchema, typeEnv, context, jobGenParams.getRetainInput(), retainMissing,
                 nonMatchWriterFactory, dataset, jobGenParams.getIndexName(), lowKeyIndexes, highKeyIndexes,
                 jobGenParams.isLowKeyInclusive(), jobGenParams.isHighKeyInclusive(), propagateFilter,
                 nonFilterWriterFactory, minFilterFieldIndexes, maxFilterFieldIndexes, tupleFilterFactory, outputLimit,
                 unnestMap.getGenerateCallBackProceedResultVar(),
-                isPrimaryIndexPointSearch(op, context.getPhysicalOptimizationConfig()),
-                DefaultTupleProjectorFactory.INSTANCE);
+                useBatchPointSearch(op, context.getPhysicalOptimizationConfig()), tupleProjectorFactory,
+                isPrimaryIndexPointSearch());
         IOperatorDescriptor opDesc = btreeSearch.first;
         opDesc.setSourceLocation(unnestMap.getSourceLocation());
 
@@ -173,18 +182,20 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
         builder.contributeGraphEdge(srcExchange, 0, unnestMap, 0);
     }
 
-    /**
-     * Check whether we can use {@link LSMBTreeBatchPointSearchCursor} to perform point-lookups on the primary index
-     */
-    private boolean isPrimaryIndexPointSearch(ILogicalOperator op, PhysicalOptimizationConfig config) {
-        if (!config.isBatchLookupEnabled() || !isEqCondition || !isPrimaryIndex
-                || !lowKeyVarList.equals(highKeyVarList)) {
+    private boolean isPrimaryIndexPointSearch() {
+        if (!isEqCondition || !isPrimaryIndex || !lowKeyVarList.equals(highKeyVarList)) {
             return false;
         }
         Index searchIndex = ((DataSourceIndex) idx).getIndex();
         int numberOfKeyFields = ((Index.ValueIndexDetails) searchIndex.getIndexDetails()).getKeyFieldNames().size();
+        return lowKeyVarList.size() == numberOfKeyFields && highKeyVarList.size() == numberOfKeyFields;
+    }
 
-        if (lowKeyVarList.size() != numberOfKeyFields || highKeyVarList.size() != numberOfKeyFields) {
+    /**
+     * Check whether we can use {@link LSMBTreeBatchPointSearchCursor} to perform point-lookups on the primary index
+     */
+    private boolean useBatchPointSearch(ILogicalOperator op, PhysicalOptimizationConfig config) {
+        if (!config.isBatchLookupEnabled() || !isPrimaryIndexPointSearch()) {
             return false;
         }
 
@@ -205,7 +216,7 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
 
     @Override
     public PhysicalRequirements getRequiredPropertiesForChildren(ILogicalOperator op,
-            IPhysicalPropertiesVector reqdByParent, IOptimizationContext context) {
+            IPhysicalPropertiesVector reqdByParent, IOptimizationContext context) throws AlgebricksException {
         if (requiresBroadcast) {
             // For primary indexes optimizing an equality condition we can reduce the broadcast requirement to hash partitioning.
             if (isPrimaryIndex && isEqCondition) {
@@ -228,7 +239,11 @@ public class BTreeSearchPOperator extends IndexSearchPOperator {
                         orderColumns.add(new OrderColumn(orderVar, OrderKind.ASC));
                     }
                     propsLocal.add(new LocalOrderProperty(orderColumns));
-                    pv[0] = new StructuralPropertiesVector(new UnorderedPartitionedProperty(searchKeyVars, domain),
+                    MetadataProvider mp = (MetadataProvider) context.getMetadataProvider();
+                    Dataset dataset = mp.findDataset(searchIndex.getDataverseName(), searchIndex.getDatasetName());
+                    int[][] partitionsMap = mp.getPartitionsMap(dataset);
+                    pv[0] = new StructuralPropertiesVector(
+                            UnorderedPartitionedProperty.ofPartitionsMap(searchKeyVars, domain, partitionsMap),
                             propsLocal);
                     return new PhysicalRequirements(pv, IPartitioningRequirementsCoordinator.NO_COORDINATION);
                 }

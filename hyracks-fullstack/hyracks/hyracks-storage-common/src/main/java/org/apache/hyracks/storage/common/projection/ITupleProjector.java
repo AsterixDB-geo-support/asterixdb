@@ -25,5 +25,5 @@ import org.apache.hyracks.dataflow.common.comm.io.ArrayTupleBuilder;
 import org.apache.hyracks.dataflow.common.data.accessors.ITupleReference;
 
 public interface ITupleProjector {
-    void project(ITupleReference tuple, DataOutput dos, ArrayTupleBuilder tb) throws IOException;
+    ITupleReference project(ITupleReference tuple, DataOutput dos, ArrayTupleBuilder tb) throws IOException;
 }

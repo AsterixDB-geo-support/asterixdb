@@ -72,7 +72,7 @@ import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.om.types.IAType;
 import org.apache.asterix.om.types.TypeTagUtil;
 import org.apache.asterix.runtime.evaluators.common.NumberUtils;
-import org.apache.asterix.runtime.projection.DataProjectionInfo;
+import org.apache.asterix.runtime.projection.DataProjectionFiltrationInfo;
 import org.apache.asterix.runtime.projection.FunctionCallInformation;
 import org.apache.hyracks.algebricks.common.exceptions.NotImplementedException;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
@@ -242,7 +242,7 @@ public class ExternalDataUtils {
 
     public static boolean isTrue(Map<String, String> configuration, String key) {
         String value = configuration.get(key);
-        return value == null ? false : Boolean.valueOf(value);
+        return value != null && Boolean.valueOf(value);
     }
 
     // Currently not used.
@@ -389,8 +389,7 @@ public class ExternalDataUtils {
     /**
      * Fills the configuration of the external dataset and its adapter with default values if not provided by user.
      *
-     * @param configuration
-     *            external data configuration
+     * @param configuration external data configuration
      */
     public static void defaultConfiguration(Map<String, String> configuration) {
         String format = configuration.get(ExternalDataConstants.KEY_FORMAT);
@@ -412,10 +411,8 @@ public class ExternalDataUtils {
      * Prepares the configuration of the external data and its adapter by filling the information required by
      * adapters and parsers.
      *
-     * @param adapterName
-     *            adapter name
-     * @param configuration
-     *            external data configuration
+     * @param adapterName   adapter name
+     * @param configuration external data configuration
      */
     public static void prepare(String adapterName, Map<String, String> configuration) {
         if (!configuration.containsKey(ExternalDataConstants.KEY_READER)) {
@@ -441,8 +438,7 @@ public class ExternalDataUtils {
      * Normalizes the values of certain parameters of the adapter configuration. This should happen before persisting
      * the metadata (e.g. when creating external datasets or feeds) and when creating an adapter factory.
      *
-     * @param configuration
-     *            external data configuration
+     * @param configuration external data configuration
      */
     public static void normalize(Map<String, String> configuration) {
         // normalize the "format" parameter
@@ -462,10 +458,8 @@ public class ExternalDataUtils {
     /**
      * Validates the parameter values of the adapter configuration. This should happen after normalizing the values.
      *
-     * @param configuration
-     *            external data configuration
-     * @throws HyracksDataException
-     *             HyracksDataException
+     * @param configuration external data configuration
+     * @throws HyracksDataException HyracksDataException
      */
     public static void validate(Map<String, String> configuration) throws HyracksDataException {
         String format = configuration.get(ExternalDataConstants.KEY_FORMAT);
@@ -527,8 +521,7 @@ public class ExternalDataUtils {
      * Validates adapter specific external dataset properties. Specific properties for different adapters should be
      * validated here
      *
-     * @param configuration
-     *            properties
+     * @param configuration properties
      */
     public static void validateAdapterSpecificProperties(Map<String, String> configuration, SourceLocation srcLoc,
             IWarningCollector collector, IApplicationContext appCtx) throws CompilationException {
@@ -556,8 +549,7 @@ public class ExternalDataUtils {
     /**
      * Regex matches all the provided patterns against the provided path
      *
-     * @param path
-     *            path to check against
+     * @param path path to check against
      * @return {@code true} if all patterns match, {@code false} otherwise
      */
     public static boolean matchPatterns(List<Matcher> matchers, String path) {
@@ -572,8 +564,7 @@ public class ExternalDataUtils {
     /**
      * Converts the wildcard to proper regex
      *
-     * @param pattern
-     *            wildcard pattern to convert
+     * @param pattern wildcard pattern to convert
      * @return regex expression
      */
     public static String patternToRegex(String pattern) {
@@ -662,8 +653,7 @@ public class ExternalDataUtils {
     /**
      * Adjusts the prefix (if needed) and returns it
      *
-     * @param configuration
-     *            configuration
+     * @param configuration configuration
      */
     public static String getPrefix(Map<String, String> configuration) {
         return getPrefix(configuration, true);
@@ -696,10 +686,8 @@ public class ExternalDataUtils {
     }
 
     /**
-     * @param configuration
-     *            configuration map
-     * @throws CompilationException
-     *             Compilation exception
+     * @param configuration configuration map
+     * @throws CompilationException Compilation exception
      */
     public static void validateIncludeExclude(Map<String, String> configuration) throws CompilationException {
         // Ensure that include and exclude are not provided at the same time + ensure valid format or property
@@ -783,10 +771,8 @@ public class ExternalDataUtils {
     /**
      * Validate Parquet dataset's declared type and configuration
      *
-     * @param properties
-     *            external dataset configuration
-     * @param datasetRecordType
-     *            dataset declared type
+     * @param properties        external dataset configuration
+     * @param datasetRecordType dataset declared type
      */
     public static void validateParquetTypeAndConfiguration(Map<String, String> properties,
             ARecordType datasetRecordType) throws CompilationException {
@@ -814,11 +800,11 @@ public class ExternalDataUtils {
                 || ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat);
     }
 
-    public static void setExternalDataProjectionInfo(DataProjectionInfo projectionInfo, Map<String, String> properties)
+    public static void setExternalDataProjectionInfo(DataProjectionFiltrationInfo projectionInfo, Map<String, String> properties)
             throws IOException {
         if (properties.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
             ARecordType expectedType = projectionInfo.getProjectionInfo();
-            if (expectedType == DataProjectionInfo.EMPTY_TYPE || expectedType == DataProjectionInfo.ALL_FIELDS_TYPE)
+            if (expectedType == DataProjectionFiltrationInfo.EMPTY_TYPE || expectedType == DataProjectionFiltrationInfo.ALL_FIELDS_TYPE)
                 properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS, expectedType.getTypeName());
             else {
                 properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS,
@@ -836,19 +822,19 @@ public class ExternalDataUtils {
     /**
      * Serialize {@link ARecordType} as Base64 string to pass it to {@link org.apache.hadoop.conf.Configuration}
      *
-     * @param expectedType
-     *            expected type
+     * @param expectedType expected type
      * @return the expected type as Base64 string
      */
     private static String serializeExpectedTypeToString(ARecordType expectedType) throws IOException {
-        if (expectedType == DataProjectionInfo.EMPTY_TYPE || expectedType == DataProjectionInfo.ALL_FIELDS_TYPE) {
+        if (expectedType == DataProjectionFiltrationInfo.EMPTY_TYPE
+                || expectedType == DataProjectionFiltrationInfo.ALL_FIELDS_TYPE) {
             //Return the type name of EMPTY_TYPE and ALL_FIELDS_TYPE
             return expectedType.getTypeName();
         }
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         DataOutputStream dataOutputStream = new DataOutputStream(byteArrayOutputStream);
         Base64.Encoder encoder = Base64.getEncoder();
-        DataProjectionInfo.writeTypeField(expectedType, dataOutputStream);
+        DataProjectionFiltrationInfo.writeTypeField(expectedType, dataOutputStream);
         return encoder.encodeToString(byteArrayOutputStream.toByteArray());
     }
 
@@ -856,8 +842,7 @@ public class ExternalDataUtils {
      * Serialize {@link FunctionCallInformation} map as Base64 string to pass it to
      * {@link org.apache.hadoop.conf.Configuration}
      *
-     * @param functionCallInfoMap
-     *            function information map
+     * @param functionCallInfoMap function information map
      * @return function information map as Base64 string
      */
     static String serializeFunctionCallInfoToString(Map<String, FunctionCallInformation> functionCallInfoMap)
@@ -865,7 +850,7 @@ public class ExternalDataUtils {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         DataOutputStream dataOutputStream = new DataOutputStream(byteArrayOutputStream);
         Base64.Encoder encoder = Base64.getEncoder();
-        DataProjectionInfo.writeFunctionCallInformationMapField(functionCallInfoMap, dataOutputStream);
+        DataProjectionFiltrationInfo.writeFunctionCallInformationMapField(functionCallInfoMap, dataOutputStream);
         return encoder.encodeToString(byteArrayOutputStream.toByteArray());
     }
 

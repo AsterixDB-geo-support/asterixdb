@@ -23,7 +23,6 @@ import static org.apache.asterix.common.utils.IdentifierUtil.dataset;
 import static org.apache.asterix.common.utils.IdentifierUtil.dataverse;
 import static org.apache.asterix.lang.common.statement.CreateFullTextFilterStatement.FIELD_TYPE_STOPWORDS;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.rmi.RemoteException;
@@ -34,7 +33,6 @@ import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -72,10 +70,10 @@ import org.apache.asterix.common.api.IRequestTracker;
 import org.apache.asterix.common.api.IResponsePrinter;
 import org.apache.asterix.common.cluster.IClusterStateManager;
 import org.apache.asterix.common.config.DatasetConfig.DatasetType;
-import org.apache.asterix.common.config.DatasetConfig.ExternalFilePendingOp;
 import org.apache.asterix.common.config.DatasetConfig.IndexType;
 import org.apache.asterix.common.config.DatasetConfig.TransactionState;
 import org.apache.asterix.common.config.GlobalConfig;
+import org.apache.asterix.common.config.StorageProperties;
 import org.apache.asterix.common.dataflow.ICcApplicationContext;
 import org.apache.asterix.common.exceptions.ACIDException;
 import org.apache.asterix.common.exceptions.AsterixException;
@@ -96,8 +94,6 @@ import org.apache.asterix.common.utils.JobUtils.ProgressState;
 import org.apache.asterix.common.utils.StorageConstants;
 import org.apache.asterix.compiler.provider.ILangCompilationProvider;
 import org.apache.asterix.external.dataset.adapter.AdapterIdentifier;
-import org.apache.asterix.external.indexing.ExternalFile;
-import org.apache.asterix.external.indexing.IndexingConstants;
 import org.apache.asterix.external.operators.FeedIntakeOperatorNodePushable;
 import org.apache.asterix.external.util.ExternalDataConstants;
 import org.apache.asterix.external.util.ExternalDataUtils;
@@ -148,7 +144,6 @@ import org.apache.asterix.lang.common.statement.LoadStatement;
 import org.apache.asterix.lang.common.statement.NodeGroupDropStatement;
 import org.apache.asterix.lang.common.statement.NodegroupDecl;
 import org.apache.asterix.lang.common.statement.Query;
-import org.apache.asterix.lang.common.statement.RefreshExternalDatasetStatement;
 import org.apache.asterix.lang.common.statement.SetStatement;
 import org.apache.asterix.lang.common.statement.StartFeedStatement;
 import org.apache.asterix.lang.common.statement.StopFeedStatement;
@@ -157,7 +152,6 @@ import org.apache.asterix.lang.common.statement.TypeDecl;
 import org.apache.asterix.lang.common.statement.TypeDropStatement;
 import org.apache.asterix.lang.common.statement.ViewDecl;
 import org.apache.asterix.lang.common.statement.ViewDropStatement;
-import org.apache.asterix.lang.common.statement.WriteStatement;
 import org.apache.asterix.lang.common.struct.Identifier;
 import org.apache.asterix.lang.common.struct.VarIdentifier;
 import org.apache.asterix.lang.common.util.FunctionUtil;
@@ -167,6 +161,7 @@ import org.apache.asterix.metadata.IDatasetDetails;
 import org.apache.asterix.metadata.MetadataManager;
 import org.apache.asterix.metadata.MetadataTransactionContext;
 import org.apache.asterix.metadata.bootstrap.MetadataBuiltinEntities;
+import org.apache.asterix.metadata.dataset.DatasetFormatInfo;
 import org.apache.asterix.metadata.dataset.hints.DatasetHints;
 import org.apache.asterix.metadata.dataset.hints.DatasetHints.DatasetNodegroupCardinalityHint;
 import org.apache.asterix.metadata.declared.MetadataProvider;
@@ -191,9 +186,7 @@ import org.apache.asterix.metadata.entities.Synonym;
 import org.apache.asterix.metadata.entities.ViewDetails;
 import org.apache.asterix.metadata.feeds.FeedMetadataUtil;
 import org.apache.asterix.metadata.functions.ExternalFunctionCompilerUtil;
-import org.apache.asterix.metadata.lock.ExternalDatasetsRegistry;
 import org.apache.asterix.metadata.utils.DatasetUtil;
-import org.apache.asterix.metadata.utils.ExternalIndexingOperations;
 import org.apache.asterix.metadata.utils.IndexUtil;
 import org.apache.asterix.metadata.utils.KeyFieldTypeUtil;
 import org.apache.asterix.metadata.utils.MetadataConstants;
@@ -244,7 +237,6 @@ import org.apache.hyracks.algebricks.core.algebra.base.Counter;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCallExpression.FunctionKind;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.util.OperatorPropertiesUtil;
-import org.apache.hyracks.algebricks.data.IAWriterFactory;
 import org.apache.hyracks.api.client.IClusterInfoCollector;
 import org.apache.hyracks.api.client.IHyracksClientConnection;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
@@ -252,7 +244,6 @@ import org.apache.hyracks.api.exceptions.IWarningCollector;
 import org.apache.hyracks.api.exceptions.SourceLocation;
 import org.apache.hyracks.api.exceptions.Warning;
 import org.apache.hyracks.api.io.FileSplit;
-import org.apache.hyracks.api.io.UnmanagedFileSplit;
 import org.apache.hyracks.api.job.JobFlag;
 import org.apache.hyracks.api.job.JobId;
 import org.apache.hyracks.api.job.JobSpecification;
@@ -265,7 +256,6 @@ import org.apache.hyracks.storage.am.common.dataflow.IndexDropOperatorDescriptor
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMMergePolicyFactory;
 import org.apache.hyracks.storage.am.lsm.invertedindex.fulltext.TokenizerCategory;
 import org.apache.hyracks.util.LogRedactionUtil;
-import org.apache.hyracks.util.OptionalBoolean;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -507,12 +497,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     case COMPACT:
                         handleCompactStatement(metadataProvider, stmt, hcc);
                         break;
-                    case EXTERNAL_DATASET_REFRESH:
-                        handleExternalDatasetRefreshStatement(metadataProvider, stmt, hcc);
-                        break;
-                    case WRITE:
-                        //Deprecated.
-                        break;
                     case FUNCTION_DECL:
                         handleDeclareFunctionStatement(metadataProvider, stmt);
                         break;
@@ -573,18 +557,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             int varCounter) {
         return new LangRewritingContext(metadataProvider, declaredFunctions, declaredViews, warningCollector,
                 varCounter);
-    }
-
-    protected Pair<IAWriterFactory, FileSplit> handleWriteStatement(Statement stmt)
-            throws InstantiationException, IllegalAccessException, ClassNotFoundException {
-        WriteStatement ws = (WriteStatement) stmt;
-        File f = new File(ws.getFileName());
-        FileSplit outputFile = new UnmanagedFileSplit(ws.getNcName().getValue(), f.getPath());
-        IAWriterFactory writerFactory = null;
-        if (ws.getWriterClassName() != null) {
-            writerFactory = (IAWriterFactory) Class.forName(ws.getWriterClassName()).newInstance();
-        }
-        return new Pair<>(writerFactory, outputFile);
     }
 
     protected Dataverse handleUseDataverseStatement(MetadataProvider metadataProvider, Statement stmt)
@@ -673,7 +645,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
 
     protected static void validateCompactionPolicy(String compactionPolicy,
             Map<String, String> compactionPolicyProperties, MetadataTransactionContext mdTxnCtx,
-            boolean isExternalDataset, SourceLocation sourceLoc) throws CompilationException, Exception {
+            boolean isExternalDataset, SourceLocation sourceLoc) throws Exception {
         CompactionPolicy compactionPolicyEntity = MetadataManager.INSTANCE.getCompactionPolicy(mdTxnCtx,
                 MetadataConstants.METADATA_DATAVERSE_NAME, compactionPolicy);
         if (compactionPolicyEntity == null) {
@@ -774,6 +746,10 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         Dataset dataset = null;
         Datatype itemTypeEntity = null, metaItemTypeEntity = null;
         boolean itemTypeAdded = false, metaItemTypeAdded = false;
+
+        StorageProperties storageProperties = metadataProvider.getStorageProperties();
+        DatasetFormatInfo datasetFormatInfo = dd.getDatasetFormatInfo(storageProperties.getStorageFormat(),
+                storageProperties.getColumnMaxTupleCount(), storageProperties.getColumnFreeSpaceTolerance());
         try {
             // Check if the dataverse exists
             Dataverse dv = MetadataManager.INSTANCE.getDataverse(mdTxnCtx, dataverseName);
@@ -829,12 +805,15 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
 
                     List<List<String>> partitioningExprs =
                             ((InternalDetailsDecl) dd.getDatasetDetailsDecl()).getPartitioningExprs();
+                    List<TypeExpression> partitioningExprTypes =
+                            ((InternalDetailsDecl) dd.getDatasetDetailsDecl()).getPartitioningExprTypes();
                     List<Integer> keySourceIndicators =
                             ((InternalDetailsDecl) dd.getDatasetDetailsDecl()).getKeySourceIndicators();
                     boolean autogenerated = ((InternalDetailsDecl) dd.getDatasetDetailsDecl()).isAutogenerated();
                     ARecordType aRecordType = (ARecordType) itemType;
-                    List<IAType> partitioningTypes = ValidateUtil.validatePartitioningExpressions(aRecordType,
-                            metaRecType, partitioningExprs, keySourceIndicators, autogenerated, sourceLoc);
+                    List<IAType> partitioningTypes =
+                            ValidateUtil.validatePartitioningExpressions(aRecordType, metaRecType, partitioningExprs,
+                                    keySourceIndicators, autogenerated, sourceLoc, partitioningExprTypes);
 
                     List<String> filterField = ((InternalDetailsDecl) dd.getDatasetDetailsDecl()).getFilterField();
                     Integer filterSourceIndicator =
@@ -851,9 +830,12 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                         compactionPolicy = StorageConstants.DEFAULT_FILTERED_DATASET_COMPACTION_POLICY_NAME;
                         compactionPolicyProperties = StorageConstants.DEFAULT_COMPACTION_POLICY_PROPERTIES;
                     }
+                    boolean isDatasetWithoutTypeSpec = aRecordType.getFieldNames().length == 0 && metaRecType == null;
+
                     datasetDetails = new InternalDatasetDetails(InternalDatasetDetails.FileStructure.BTREE,
                             InternalDatasetDetails.PartitioningStrategy.HASH, partitioningExprs, partitioningExprs,
-                            keySourceIndicators, partitioningTypes, autogenerated, filterSourceIndicator, filterField);
+                            keySourceIndicators, partitioningTypes, autogenerated, filterSourceIndicator, filterField,
+                            isDatasetWithoutTypeSpec);
                     break;
                 case EXTERNAL:
                     ExternalDetailsDecl externalDetails = (ExternalDetailsDecl) dd.getDatasetDetailsDecl();
@@ -880,7 +862,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             dataset = new Dataset(dataverseName, datasetName, itemTypeDataverseName, itemTypeName,
                     metaItemTypeDataverseName, metaItemTypeName, ngName, compactionPolicy, compactionPolicyProperties,
                     datasetDetails, dd.getHints(), dsType, DatasetIdFactory.generateDatasetId(),
-                    MetadataUtil.PENDING_ADD_OP, compressionScheme);
+                    MetadataUtil.PENDING_ADD_OP, compressionScheme, datasetFormatInfo);
             MetadataManager.INSTANCE.addDataset(metadataProvider.getMetadataTxnContext(), dataset);
 
             if (itemTypeIsInline) {
@@ -1152,6 +1134,9 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                 metaRecordType = (ARecordType) metaDt.getDatatype();
             }
             */
+            if (!ds.hasMetaPart()) {
+                aRecordType = (ARecordType) metadataProvider.findTypeForDatasetWithoutType(aRecordType, null, ds);
+            }
 
             List<List<IAType>> indexFieldTypes = new ArrayList<>(indexedElementsCount);
             boolean hadUnnest = false;
@@ -1462,15 +1447,12 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     "full-text filter type is null");
         }
 
-        switch (filterType) {
-            case FIELD_TYPE_STOPWORDS: {
-                filterDescriptor = new StopwordsFullTextFilterDescriptor(dataverseName,
-                        stmtCreateFilter.getFilterName(), stmtCreateFilter.getStopwordsList());
-                break;
-            }
-            default:
-                throw new CompilationException(ErrorCode.COMPILATION_ERROR, stmtCreateFilter.getSourceLocation(),
-                        "Unexpected full-text filter type: " + filterType);
+        if (FIELD_TYPE_STOPWORDS.equals(filterType)) {
+            filterDescriptor = new StopwordsFullTextFilterDescriptor(dataverseName, stmtCreateFilter.getFilterName(),
+                    stmtCreateFilter.getStopwordsList());
+        } else {
+            throw new CompilationException(ErrorCode.COMPILATION_ERROR, stmtCreateFilter.getSourceLocation(),
+                    "Unexpected full-text filter type: " + filterType);
         }
 
         MetadataTransactionContext mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
@@ -1544,8 +1526,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                 }
             }
 
-            ImmutableList.Builder<IFullTextFilterDescriptor> filterDescriptorsBuilder =
-                    ImmutableList.<IFullTextFilterDescriptor> builder();
+            ImmutableList.Builder<IFullTextFilterDescriptor> filterDescriptorsBuilder = ImmutableList.builder();
             for (String filterName : filterNames) {
                 FullTextFilterMetadataEntity filterMetadataEntity =
                         MetadataManager.INSTANCE.getFullTextFilter(mdTxnCtx, dataverseName, filterName);
@@ -1572,79 +1553,15 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             Index index, EnumSet<JobFlag> jobFlags, SourceLocation sourceLoc) throws Exception {
         ProgressState progress = ProgressState.NO_PROGRESS;
         boolean bActiveTxn = true;
-        Index filesIndex = null;
-        boolean firstExternalDatasetIndex = false;
-        boolean datasetLocked = false;
-        List<ExternalFile> externalFilesSnapshot;
         MetadataTransactionContext mdTxnCtx = metadataProvider.getMetadataTxnContext();
         JobSpecification spec;
-        boolean filesIndexReplicated = false;
         try {
             index.setPendingOp(MetadataUtil.PENDING_ADD_OP);
             if (ds.getDatasetType() == DatasetType.INTERNAL) {
                 validateDatasetState(metadataProvider, ds, sourceLoc);
-            } else {
-                // External dataset
-                // Check if the dataset is indexible
-                if (!ExternalIndexingOperations.isIndexible((ExternalDatasetDetails) ds.getDatasetDetails())) {
-                    throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc,
-                            dataset() + " using " + ((ExternalDatasetDetails) ds.getDatasetDetails()).getAdapter()
-                                    + " adapter can't be indexed");
-                }
-                // Check if the name of the index is valid
-                if (!ExternalIndexingOperations.isValidIndexName(index.getDatasetName(), index.getIndexName())) {
-                    throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc,
-                            "external " + dataset() + " index name is invalid");
-                }
-
-                // Check if the files index exist
-                filesIndex = MetadataManager.INSTANCE.getIndex(metadataProvider.getMetadataTxnContext(),
-                        index.getDataverseName(), index.getDatasetName(),
-                        IndexingConstants.getFilesIndexName(index.getDatasetName()));
-                firstExternalDatasetIndex = filesIndex == null;
-                // Lock external dataset
-                ExternalDatasetsRegistry.INSTANCE.buildIndexBegin(ds, firstExternalDatasetIndex);
-                datasetLocked = true;
-                if (firstExternalDatasetIndex) {
-                    // Verify that no one has created an index before we acquire the lock
-                    filesIndex = MetadataManager.INSTANCE.getIndex(metadataProvider.getMetadataTxnContext(),
-                            index.getDataverseName(), index.getDatasetName(),
-                            IndexingConstants.getFilesIndexName(index.getDatasetName()));
-                    if (filesIndex != null) {
-                        ExternalDatasetsRegistry.INSTANCE.buildIndexEnd(ds, firstExternalDatasetIndex);
-                        firstExternalDatasetIndex = false;
-                        ExternalDatasetsRegistry.INSTANCE.buildIndexBegin(ds, firstExternalDatasetIndex);
-                    }
-                }
-                if (firstExternalDatasetIndex) {
-                    // Get snapshot from External File System
-                    externalFilesSnapshot = ExternalIndexingOperations.getSnapshotFromExternalFileSystem(ds);
-                    // Add an entry for the files index
-                    OptionalBoolean excludeUnknownKey =
-                            ((Index.ValueIndexDetails) index.getIndexDetails()).getExcludeUnknownKey();
-                    OptionalBoolean castDefaultNull =
-                            ((Index.ValueIndexDetails) index.getIndexDetails()).getCastDefaultNull();
-                    String datetimeFormat = ((Index.ValueIndexDetails) index.getIndexDetails()).getCastDatetimeFormat();
-                    String dateFormat = ((Index.ValueIndexDetails) index.getIndexDetails()).getCastDateFormat();
-                    String timeFormat = ((Index.ValueIndexDetails) index.getIndexDetails()).getCastTimeFormat();
-
-                    filesIndex = new Index(index.getDataverseName(), index.getDatasetName(),
-                            IndexingConstants.getFilesIndexName(index.getDatasetName()), IndexType.BTREE,
-                            new Index.ValueIndexDetails(ExternalIndexingOperations.FILE_INDEX_FIELD_NAMES, null,
-                                    ExternalIndexingOperations.FILE_INDEX_FIELD_TYPES, false, excludeUnknownKey,
-                                    castDefaultNull, datetimeFormat, dateFormat, timeFormat),
-                            false, false, MetadataUtil.PENDING_ADD_OP);
-                    MetadataManager.INSTANCE.addIndex(metadataProvider.getMetadataTxnContext(), filesIndex);
-                    // Add files to the external files index
-                    for (ExternalFile file : externalFilesSnapshot) {
-                        MetadataManager.INSTANCE.addExternalFile(mdTxnCtx, file);
-                    }
-                    // This is the first index for the external dataset, replicate the files index
-                    spec = ExternalIndexingOperations.buildFilesIndexCreateJobSpec(ds, externalFilesSnapshot,
-                            metadataProvider);
-                    filesIndexReplicated = true;
-                    runJob(hcc, spec, jobFlags);
-                }
+            } else if (ds.getDatasetType() == DatasetType.EXTERNAL) {
+                throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc, dataset() + " using "
+                        + ((ExternalDatasetDetails) ds.getDatasetDetails()).getAdapter() + " adapter can't be indexed");
             }
 
             // check whether there exists another enforced index on the same field
@@ -1749,39 +1666,10 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     index.getDatasetName(), index.getIndexName());
             index.setPendingOp(MetadataUtil.PENDING_NO_OP);
             MetadataManager.INSTANCE.addIndex(metadataProvider.getMetadataTxnContext(), index);
-            // add another new files index with PendingNoOp after deleting the index with
-            // PendingAddOp
-            if (firstExternalDatasetIndex) {
-                MetadataManager.INSTANCE.dropIndex(metadataProvider.getMetadataTxnContext(), index.getDataverseName(),
-                        index.getDatasetName(), filesIndex.getIndexName());
-                filesIndex.setPendingOp(MetadataUtil.PENDING_NO_OP);
-                MetadataManager.INSTANCE.addIndex(metadataProvider.getMetadataTxnContext(), filesIndex);
-                // update transaction timestamp
-                ((ExternalDatasetDetails) ds.getDatasetDetails()).setRefreshTimestamp(new Date());
-                MetadataManager.INSTANCE.updateDataset(mdTxnCtx, ds);
-            }
             MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
         } catch (Exception e) {
             if (bActiveTxn) {
                 abort(e, e, mdTxnCtx);
-            }
-            // If files index was replicated for external dataset, it should be cleaned up
-            // on NC side
-            if (filesIndexReplicated) {
-                mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-                bActiveTxn = true;
-                try {
-                    JobSpecification jobSpec =
-                            ExternalIndexingOperations.buildDropFilesIndexJobSpec(metadataProvider, ds);
-                    MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                    bActiveTxn = false;
-                    runJob(hcc, jobSpec, jobFlags);
-                } catch (Exception e2) {
-                    e.addSuppressed(e2);
-                    if (bActiveTxn) {
-                        abort(e, e2, mdTxnCtx);
-                    }
-                }
             }
 
             if (progress == ProgressState.ADDED_PENDINGOP_RECORD_TO_METADATA) {
@@ -1802,38 +1690,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     }
                 }
 
-                if (firstExternalDatasetIndex) {
-                    mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-                    metadataProvider.setMetadataTxnContext(mdTxnCtx);
-                    try {
-                        // Drop External Files from metadata
-                        MetadataManager.INSTANCE.dropDatasetExternalFiles(mdTxnCtx, ds);
-                        MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                    } catch (Exception e2) {
-                        e.addSuppressed(e2);
-                        abort(e, e2, mdTxnCtx);
-                        throw new IllegalStateException(
-                                "System is inconsistent state: pending files for(" + index.getDataverseName() + "."
-                                        + index.getDatasetName() + ") couldn't be removed from the metadata",
-                                e);
-                    }
-                    mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-                    metadataProvider.setMetadataTxnContext(mdTxnCtx);
-                    try {
-                        // Drop the files index from metadata
-                        MetadataManager.INSTANCE.dropIndex(metadataProvider.getMetadataTxnContext(),
-                                index.getDataverseName(), index.getDatasetName(),
-                                IndexingConstants.getFilesIndexName(index.getDatasetName()));
-                        MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                    } catch (Exception e2) {
-                        e.addSuppressed(e2);
-                        abort(e, e2, mdTxnCtx);
-                        throw new IllegalStateException("System is inconsistent state: pending index("
-                                + index.getDataverseName() + "." + index.getDatasetName() + "."
-                                + IndexingConstants.getFilesIndexName(index.getDatasetName())
-                                + ") couldn't be removed from the metadata", e);
-                    }
-                }
                 // remove the record from the metadata.
                 mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
                 metadataProvider.setMetadataTxnContext(mdTxnCtx);
@@ -1850,10 +1706,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                 }
             }
             throw e;
-        } finally {
-            if (datasetLocked) {
-                ExternalDatasetsRegistry.INSTANCE.buildIndexEnd(ds, firstExternalDatasetIndex);
-            }
         }
     }
 
@@ -1944,7 +1796,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             doDropDataverse(stmtDropDataverse, metadataProvider, hcc, requestParameters);
         } finally {
             metadataProvider.getLocks().unlock();
-            ExternalDatasetsRegistry.INSTANCE.releaseAcquiredLocks(metadataProvider);
         }
     }
 
@@ -1957,7 +1808,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         boolean bActiveTxn = true;
         metadataProvider.setMetadataTxnContext(mdTxnCtx);
         List<FeedEventsListener> feedsToStop = new ArrayList<>();
-        List<Dataset> externalDatasetsToDeregister = new ArrayList<>();
         List<JobSpecification> jobsToExecute = new ArrayList<>();
         try {
             Dataverse dv = MetadataManager.INSTANCE.getDataverse(mdTxnCtx, dataverseName);
@@ -2007,18 +1857,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                         }
                         break;
                     case EXTERNAL:
-                        indexes = MetadataManager.INSTANCE.getDatasetIndexes(mdTxnCtx, dataverseName, datasetName);
-                        for (Index index : indexes) {
-                            if (ExternalIndexingOperations.isFileIndex(index)) {
-                                jobsToExecute.add(ExternalIndexingOperations
-                                        .buildDropFilesIndexJobSpec(metadataProvider, dataset));
-                            } else {
-                                jobsToExecute.add(
-                                        IndexUtil.buildDropIndexJobSpec(index, metadataProvider, dataset, sourceLoc));
-                            }
-                        }
-                        externalDatasetsToDeregister.add(dataset);
-                        break;
                     case VIEW:
                         break;
                 }
@@ -2044,10 +1882,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
             bActiveTxn = false;
             progress = ProgressState.ADDED_PENDINGOP_RECORD_TO_METADATA;
-
-            for (Dataset externalDataset : externalDatasetsToDeregister) {
-                ExternalDatasetsRegistry.INSTANCE.removeDatasetInfo(externalDataset);
-            }
 
             for (FeedEventsListener feedListener : feedsToStop) {
                 if (feedListener.getState() != ActivityState.STOPPED) {
@@ -2151,7 +1985,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     requestParameters, true, sourceLoc);
         } finally {
             metadataProvider.getLocks().unlock();
-            ExternalDatasetsRegistry.INSTANCE.releaseAcquiredLocks(metadataProvider);
         }
     }
 
@@ -2260,7 +2093,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             doDropIndex(metadataProvider, stmtIndexDrop, dataverseName, datasetName, hcc, requestParameters);
         } finally {
             metadataProvider.getLocks().unlock();
-            ExternalDatasetsRegistry.INSTANCE.releaseAcquiredLocks(metadataProvider);
         }
     }
 
@@ -2271,8 +2103,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         String indexName = stmtIndexDrop.getIndexName().getValue();
         ProgressState progress = ProgressState.NO_PROGRESS;
         List<JobSpecification> jobsToExecute = new ArrayList<>();
-        // For external index
-        boolean dropFilesIndex = false;
 
         MetadataTransactionContext mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
         boolean bActiveTxn = true;
@@ -2314,69 +2144,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
 
                 // #. finally, delete the existing index
                 MetadataManager.INSTANCE.dropIndex(mdTxnCtx, dataverseName, datasetName, indexName);
-            } else {
-                // External dataset
-                indexName = stmtIndexDrop.getIndexName().getValue();
-                Index index = MetadataManager.INSTANCE.getIndex(mdTxnCtx, dataverseName, datasetName, indexName);
-                if (index == null) {
-                    if (stmtIndexDrop.getIfExists()) {
-                        MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                        return false;
-                    } else {
-                        throw new CompilationException(ErrorCode.UNKNOWN_INDEX, sourceLoc, indexName);
-                    }
-                } else if (ExternalIndexingOperations.isFileIndex(index)) {
-                    throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc,
-                            "Dropping " + dataset() + " files index is not allowed.");
-                }
-                ensureNonPrimaryIndexDrop(index, sourceLoc);
-                prepareIndexDrop(metadataProvider, dataverseName, datasetName, sourceLoc, indexName, jobsToExecute,
-                        mdTxnCtx, ds, index);
-
-                List<Index> datasetIndexes =
-                        MetadataManager.INSTANCE.getDatasetIndexes(mdTxnCtx, dataverseName, datasetName);
-                if (datasetIndexes.size() == 2) {
-                    dropFilesIndex = true;
-                    // only one index + the files index, we need to delete both of the indexes
-                    for (Index externalIndex : datasetIndexes) {
-                        if (ExternalIndexingOperations.isFileIndex(externalIndex)) {
-                            jobsToExecute
-                                    .add(ExternalIndexingOperations.buildDropFilesIndexJobSpec(metadataProvider, ds));
-                            // #. mark PendingDropOp on the existing files index
-                            MetadataManager.INSTANCE.dropIndex(mdTxnCtx, dataverseName, datasetName,
-                                    externalIndex.getIndexName());
-                            MetadataManager.INSTANCE.addIndex(mdTxnCtx,
-                                    new Index(dataverseName, datasetName, externalIndex.getIndexName(),
-                                            externalIndex.getIndexType(), externalIndex.getIndexDetails(),
-                                            externalIndex.isEnforced(), externalIndex.isPrimaryIndex(),
-                                            MetadataUtil.PENDING_DROP_OP));
-                        }
-                    }
-                }
-
-                // #. commit the existing transaction before calling runJob.
-                MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                bActiveTxn = false;
-                progress = ProgressState.ADDED_PENDINGOP_RECORD_TO_METADATA;
-
-                for (JobSpecification jobSpec : jobsToExecute) {
-                    runJob(hcc, jobSpec);
-                }
-
-                // #. begin a new transaction
-                mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-                bActiveTxn = true;
-                metadataProvider.setMetadataTxnContext(mdTxnCtx);
-
-                // #. finally, delete the existing index
-                MetadataManager.INSTANCE.dropIndex(mdTxnCtx, dataverseName, datasetName, indexName);
-                if (dropFilesIndex) {
-                    // delete the files index too
-                    MetadataManager.INSTANCE.dropIndex(mdTxnCtx, dataverseName, datasetName,
-                            IndexingConstants.getFilesIndexName(datasetName));
-                    MetadataManager.INSTANCE.dropDatasetExternalFiles(mdTxnCtx, ds);
-                    ExternalDatasetsRegistry.INSTANCE.removeDatasetInfo(ds);
-                }
             }
             MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
             return true;
@@ -2403,10 +2170,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                 try {
                     MetadataManager.INSTANCE.dropIndex(metadataProvider.getMetadataTxnContext(), dataverseName,
                             datasetName, indexName);
-                    if (dropFilesIndex) {
-                        MetadataManager.INSTANCE.dropIndex(metadataProvider.getMetadataTxnContext(), dataverseName,
-                                datasetName, IndexingConstants.getFilesIndexName(datasetName));
-                    }
                     MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
                 } catch (Exception e2) {
                     e.addSuppressed(e2);
@@ -2815,7 +2578,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             doDropView(metadataProvider, stmtDrop, dataverseName, viewName);
         } finally {
             metadataProvider.getLocks().unlock();
-            ExternalDatasetsRegistry.INSTANCE.releaseAcquiredLocks(metadataProvider);
         }
     }
 
@@ -3985,9 +3747,8 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         ActiveEntityEventsListener listener =
                 (ActiveEntityEventsListener) activeNotificationHandler.getListener(feedId);
         if (listener != null && listener.getState() != ActivityState.STOPPED) {
-            throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc,
-                    "Feed " + feedId + " is currently active and connected to the following " + dataset(PLURAL) + "\n"
-                            + listener.toString());
+            throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc, "Feed " + feedId
+                    + " is currently active and connected to the following " + dataset(PLURAL) + "\n" + listener);
         } else if (listener != null) {
             listener.unregister();
         }
@@ -4647,7 +4408,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             throw e;
         } finally {
             metadataProvider.getLocks().unlock();
-            ExternalDatasetsRegistry.INSTANCE.releaseAcquiredLocks(metadataProvider);
         }
     }
 
@@ -4688,8 +4448,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             @Override
             public void unlock() {
                 metadataProvider.getLocks().unlock();
-                // release external datasets' locks acquired during compilation of the query
-                ExternalDatasetsRegistry.INSTANCE.releaseAcquiredLocks(metadataProvider);
                 compilationLock.readLock().unlock();
             }
         };
@@ -4913,233 +4671,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         }
     }
 
-    protected void handleExternalDatasetRefreshStatement(MetadataProvider metadataProvider, Statement stmt,
-            IHyracksClientConnection hcc) throws Exception {
-        RefreshExternalDatasetStatement stmtRefresh = (RefreshExternalDatasetStatement) stmt;
-        SourceLocation sourceLoc = stmtRefresh.getSourceLocation();
-        DataverseName dataverseName = getActiveDataverseName(stmtRefresh.getDataverseName());
-        String datasetName = stmtRefresh.getDatasetName().getValue();
-        TransactionState transactionState = TransactionState.COMMIT;
-        JobSpecification spec = null;
-        Dataset ds = null;
-        List<ExternalFile> metadataFiles = null;
-        List<ExternalFile> deletedFiles = null;
-        List<ExternalFile> addedFiles = null;
-        List<ExternalFile> appendedFiles = null;
-        List<Index> indexes = null;
-        Dataset transactionDataset = null;
-        boolean lockAquired = false;
-        boolean success = false;
-        if (isCompileOnly()) {
-            return;
-        }
-        MetadataTransactionContext mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-        metadataProvider.setMetadataTxnContext(mdTxnCtx);
-        boolean bActiveTxn = true;
-        lockUtil.refreshDatasetBegin(lockManager, metadataProvider.getLocks(), dataverseName, datasetName);
-        try {
-            ds = metadataProvider.findDataset(dataverseName, datasetName);
-            // Dataset exists ?
-            if (ds == null) {
-                throw new CompilationException(ErrorCode.UNKNOWN_DATASET_IN_DATAVERSE, sourceLoc, datasetName,
-                        dataverseName);
-            }
-            // Dataset external ?
-            if (ds.getDatasetType() != DatasetType.EXTERNAL) {
-                throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc, dataset() + " " + datasetName
-                        + " in " + dataverse() + " " + dataverseName + " is not an external " + dataset());
-            }
-            // Dataset has indexes ?
-            indexes = MetadataManager.INSTANCE.getDatasetIndexes(mdTxnCtx, dataverseName, datasetName);
-            if (indexes.isEmpty()) {
-                throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc, "External " + dataset() + " "
-                        + datasetName + " in " + dataverse() + " " + dataverseName + " doesn't have any index");
-            }
-
-            // Record transaction time
-            Date txnTime = new Date();
-
-            // refresh lock here
-            ExternalDatasetsRegistry.INSTANCE.refreshBegin(ds);
-            lockAquired = true;
-
-            // Get internal files
-            metadataFiles = MetadataManager.INSTANCE.getDatasetExternalFiles(mdTxnCtx, ds);
-            deletedFiles = new ArrayList<>();
-            addedFiles = new ArrayList<>();
-            appendedFiles = new ArrayList<>();
-
-            // Compute delta
-            // Now we compare snapshot with external file system
-            if (ExternalIndexingOperations.isDatasetUptodate(ds, metadataFiles, addedFiles, deletedFiles,
-                    appendedFiles)) {
-                ((ExternalDatasetDetails) ds.getDatasetDetails()).setRefreshTimestamp(txnTime);
-                MetadataManager.INSTANCE.updateDataset(mdTxnCtx, ds);
-                MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                // latch will be released in the finally clause
-                return;
-            }
-
-            // At this point, we know data has changed in the external file system, record
-            // transaction in metadata and start
-            transactionDataset = ExternalIndexingOperations.createTransactionDataset(ds);
-            /*
-             * Remove old dataset record and replace it with a new one
-             */
-            MetadataManager.INSTANCE.updateDataset(mdTxnCtx, transactionDataset);
-
-            // Add delta files to the metadata
-            for (ExternalFile file : addedFiles) {
-                MetadataManager.INSTANCE.addExternalFile(mdTxnCtx, file);
-            }
-            for (ExternalFile file : appendedFiles) {
-                MetadataManager.INSTANCE.addExternalFile(mdTxnCtx, file);
-            }
-            for (ExternalFile file : deletedFiles) {
-                MetadataManager.INSTANCE.addExternalFile(mdTxnCtx, file);
-            }
-
-            // Create the files index update job
-            spec = ExternalIndexingOperations.buildFilesIndexUpdateOp(ds, metadataFiles, addedFiles, appendedFiles,
-                    metadataProvider);
-
-            MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-            bActiveTxn = false;
-            transactionState = TransactionState.BEGIN;
-
-            // run the files update job
-            runJob(hcc, spec);
-
-            for (Index index : indexes) {
-                if (!ExternalIndexingOperations.isFileIndex(index)) {
-                    spec = ExternalIndexingOperations.buildIndexUpdateOp(ds, index, metadataFiles, addedFiles,
-                            appendedFiles, metadataProvider, sourceLoc);
-                    // run the files update job
-                    runJob(hcc, spec);
-                }
-            }
-
-            // all index updates has completed successfully, record transaction state
-            spec = ExternalIndexingOperations.buildCommitJob(ds, indexes, metadataProvider);
-
-            // Aquire write latch again -> start a transaction and record the decision to
-            // commit
-            mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-            metadataProvider.setMetadataTxnContext(mdTxnCtx);
-            bActiveTxn = true;
-            ((ExternalDatasetDetails) transactionDataset.getDatasetDetails())
-                    .setState(TransactionState.READY_TO_COMMIT);
-            ((ExternalDatasetDetails) transactionDataset.getDatasetDetails()).setRefreshTimestamp(txnTime);
-            MetadataManager.INSTANCE.updateDataset(mdTxnCtx, transactionDataset);
-            MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-            bActiveTxn = false;
-            transactionState = TransactionState.READY_TO_COMMIT;
-            // We don't release the latch since this job is expected to be quick
-            runJob(hcc, spec);
-            // Start a new metadata transaction to record the final state of the transaction
-            mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-            metadataProvider.setMetadataTxnContext(mdTxnCtx);
-            bActiveTxn = true;
-
-            for (ExternalFile file : metadataFiles) {
-                if (file.getPendingOp() == ExternalFilePendingOp.DROP_OP) {
-                    MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-                } else if (file.getPendingOp() == ExternalFilePendingOp.NO_OP) {
-                    Iterator<ExternalFile> iterator = appendedFiles.iterator();
-                    while (iterator.hasNext()) {
-                        ExternalFile appendedFile = iterator.next();
-                        if (file.getFileName().equals(appendedFile.getFileName())) {
-                            // delete existing file
-                            MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-                            // delete existing appended file
-                            MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, appendedFile);
-                            // add the original file with appended information
-                            appendedFile.setFileNumber(file.getFileNumber());
-                            appendedFile.setPendingOp(ExternalFilePendingOp.NO_OP);
-                            MetadataManager.INSTANCE.addExternalFile(mdTxnCtx, appendedFile);
-                            iterator.remove();
-                        }
-                    }
-                }
-            }
-
-            // remove the deleted files delta
-            for (ExternalFile file : deletedFiles) {
-                MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-            }
-
-            // insert new files
-            for (ExternalFile file : addedFiles) {
-                MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-                file.setPendingOp(ExternalFilePendingOp.NO_OP);
-                MetadataManager.INSTANCE.addExternalFile(mdTxnCtx, file);
-            }
-
-            // mark the transaction as complete
-            ((ExternalDatasetDetails) transactionDataset.getDatasetDetails()).setState(TransactionState.COMMIT);
-            MetadataManager.INSTANCE.updateDataset(mdTxnCtx, transactionDataset);
-
-            // commit metadata transaction
-            MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-            success = true;
-        } catch (Exception e) {
-            if (bActiveTxn) {
-                abort(e, e, mdTxnCtx);
-            }
-            if (transactionState == TransactionState.READY_TO_COMMIT) {
-                throw new IllegalStateException("System is inconsistent state: commit of (" + dataverseName + "."
-                        + datasetName + ") refresh couldn't carry out the commit phase", e);
-            }
-            if (transactionState == TransactionState.COMMIT) {
-                // Nothing to do , everything should be clean
-                throw e;
-            }
-            if (transactionState == TransactionState.BEGIN) {
-                // transaction failed, need to do the following
-                // clean NCs removing transaction components
-                mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-                bActiveTxn = true;
-                metadataProvider.setMetadataTxnContext(mdTxnCtx);
-                spec = ExternalIndexingOperations.buildAbortOp(ds, indexes, metadataProvider);
-                MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                bActiveTxn = false;
-                try {
-                    runJob(hcc, spec);
-                } catch (Exception e2) {
-                    // This should never happen -- fix throw illegal
-                    e.addSuppressed(e2);
-                    throw new IllegalStateException("System is in inconsistent state. Failed to abort refresh", e);
-                }
-                // remove the delta of files
-                // return the state of the dataset to committed
-                try {
-                    mdTxnCtx = MetadataManager.INSTANCE.beginTransaction();
-                    for (ExternalFile file : deletedFiles) {
-                        MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-                    }
-                    for (ExternalFile file : addedFiles) {
-                        MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-                    }
-                    for (ExternalFile file : appendedFiles) {
-                        MetadataManager.INSTANCE.dropExternalFile(mdTxnCtx, file);
-                    }
-                    MetadataManager.INSTANCE.updateDataset(mdTxnCtx, ds);
-                    // commit metadata transaction
-                    MetadataManager.INSTANCE.commitTransaction(mdTxnCtx);
-                } catch (Exception e2) {
-                    abort(e, e2, mdTxnCtx);
-                    e.addSuppressed(e2);
-                    throw new IllegalStateException("System is in inconsistent state. Failed to drop delta files", e);
-                }
-            }
-        } finally {
-            if (lockAquired) {
-                ExternalDatasetsRegistry.INSTANCE.refreshEnd(ds, success);
-            }
-            metadataProvider.getLocks().unlock();
-        }
-    }
-
     @Override
     public DataverseName getActiveDataverseName(DataverseName dataverseName) {
         return dataverseName != null ? dataverseName : activeDataverse.getDataverseName();
@@ -5252,7 +4783,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             case DATAVERSE_DECL:
             case FUNCTION_DECL:
             case SET:
-            case WRITE:
                 return false;
             default:
                 return true;
