@@ -18,10 +18,12 @@
  */
 /*
 * Description  : Test filter pushdown using st_crosses spatial function for polyline type geometry of shapefile.
+                 The MBR of the constant geometry argument inside the st_crosses function is pushed down to data-scan stage
+                 to eliminate some records during scanning
 * Expected Res : Success
 */
 
 Use test;
 
 SELECT id FROM PolyLineDataset
-WHERE st_crosses(g, st_geom_from_text("LineString(-2.796 0.385, -2.33 0.147, -1.927 0.662)"));
+WHERE st_crosses(g, st_geom_from_text("LineString(-2.796 0.385, -2.33 0.147, -1.927 0.662)")) and id > 0;

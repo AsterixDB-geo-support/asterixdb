@@ -18,6 +18,8 @@
  */
 /*
 * Description  : Test filter pushdown for multipoint type geometry of shapefile.
+                 The MBR of the constant geometry argument inside the st_within function is pushed down to data-scan stage
+                 to eliminate some records during scanning
 * Expected Res : Success
 */
 
