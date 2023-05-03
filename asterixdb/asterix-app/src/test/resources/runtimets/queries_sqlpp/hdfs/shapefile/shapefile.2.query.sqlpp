@@ -17,13 +17,12 @@
  * under the License.
  */
 /*
-* Description  : Test reading Parquet from HDFS
-                 Check Parquet S3 for more tests
+* Description  : Read both geometry and non-geometry fields from the shapefile format external dataset (no projection pushdown)
 * Expected Res : Success
 * Date         : June 22nd 2020
 * Update Date  : July 26th 2021
 */
 USE test;
 
-SELECT *
-FROM ShapeDataset;
+SELECT VALUE pointRecord
+FROM PointDataset pointRecord;

@@ -17,13 +17,10 @@
  * under the License.
  */
 /*
-* Description  : Test reading Parquet from HDFS
-                 Check Parquet S3 for more tests
+* Description  : test projection pushdown (read only only non-geometry attributes from .dbf file(s) during data-scan)
 * Expected Res : Success
-* Date         : June 22nd 2020
-* Update Date  : July 26th 2021
 */
 USE test;
 
 SELECT scalerank, name
-FROM ShapeDataset;
+FROM PointDataset;

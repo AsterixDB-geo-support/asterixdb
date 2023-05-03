@@ -17,22 +17,11 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : Test filter pushdown using st_crosses spatial function for polyline type geometry of shapefile.
 * Expected Res : Success
 */
 
-DROP DATAVERSE test IF EXISTS;
-CREATE DATAVERSE test;
+Use test;
 
-USE test;
-
-
-CREATE TYPE PointShapeType as {
-};
-
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
-(
-  ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
-  ("input-format"="shapefile")
-);
+SELECT id FROM PolyLineDataset
+WHERE st_crosses(g, st_geom_from_text("LineString(-2.796 0.385, -2.33 0.147, -1.927 0.662)"));

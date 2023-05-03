@@ -17,7 +17,7 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : Create an external dataset to read data from shapefile containing Polygon/Multipolygon type records
 * Expected Res : Success
 */
 
@@ -27,12 +27,12 @@ CREATE DATAVERSE test;
 USE test;
 
 
-CREATE TYPE PointShapeType as {
+CREATE TYPE PolygonShapeType as {
 };
 
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
+CREATE EXTERNAL DATASET PolygonDataset(PolygonShapeType) USING hdfs
 (
   ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
+  ("path"="/asterix/polygon.shp"),
   ("input-format"="shapefile")
 );

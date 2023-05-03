@@ -17,22 +17,10 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : test projection pushdown (read only only geometry attributes from .shp file(s) during data-scan)
 * Expected Res : Success
 */
-
-DROP DATAVERSE test IF EXISTS;
-CREATE DATAVERSE test;
-
 USE test;
 
-
-CREATE TYPE PointShapeType as {
-};
-
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
-(
-  ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
-  ("input-format"="shapefile")
-);
+SELECT VALUE g
+FROM PointDataset;

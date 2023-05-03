@@ -17,7 +17,7 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  :  Create an external dataset to read data from shapefile containing PolyLine type records with M and Z measures
 * Expected Res : Success
 */
 
@@ -26,13 +26,12 @@ CREATE DATAVERSE test;
 
 USE test;
 
-
-CREATE TYPE PointShapeType as {
+CREATE TYPE PolyLineShapeType as {
 };
 
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
+CREATE EXTERNAL DATASET PolyLineDataset(PolyLineShapeType) USING hdfs
 (
   ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
+  ("path"="/asterix/polyLine_MZ.shp"),
   ("input-format"="shapefile")
 );

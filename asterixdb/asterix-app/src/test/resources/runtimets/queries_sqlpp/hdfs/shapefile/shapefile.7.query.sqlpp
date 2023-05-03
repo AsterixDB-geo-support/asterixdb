@@ -17,22 +17,12 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : Test Filter pushdown on external dataset of shapefile format.
+                 The minimum bounding rectangle of the constant polygon inside the st_intersects is pushed down to the data-scan
 * Expected Res : Success
 */
 
-DROP DATAVERSE test IF EXISTS;
-CREATE DATAVERSE test;
-
 USE test;
 
-
-CREATE TYPE PointShapeType as {
-};
-
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
-(
-  ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
-  ("input-format"="shapefile")
-);
+SELECT id FROM PolygonDataset
+where st_intersects(g, st_geom_from_text("POLYGON((-1.50372 -0.8486, -1.50442 -0.07519, -1.48276 -0.07263, -1.48895 -0.08671, -1.50372 -0.8486))"));

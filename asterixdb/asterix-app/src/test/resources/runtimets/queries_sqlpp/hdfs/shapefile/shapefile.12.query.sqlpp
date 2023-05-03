@@ -17,22 +17,11 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : Test reading data from PolyLine-MZ type geometry from shapefile.
 * Expected Res : Success
 */
 
-DROP DATAVERSE test IF EXISTS;
-CREATE DATAVERSE test;
-
 USE test;
 
-
-CREATE TYPE PointShapeType as {
-};
-
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
-(
-  ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
-  ("input-format"="shapefile")
-);
+SELECT VALUE pl
+FROM PolyLineDataset pl;

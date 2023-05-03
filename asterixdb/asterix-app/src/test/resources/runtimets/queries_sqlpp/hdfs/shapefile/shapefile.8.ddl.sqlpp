@@ -17,7 +17,7 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : Create an external dataset to read data from shapefile containing Multipoints-MZ type records
 * Expected Res : Success
 */
 
@@ -26,13 +26,12 @@ CREATE DATAVERSE test;
 
 USE test;
 
-
-CREATE TYPE PointShapeType as {
+CREATE TYPE MultipointShapeType as {
 };
 
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
+CREATE EXTERNAL DATASET MultipointDataset(MultipointShapeType) USING hdfs
 (
   ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
+  ("path"="/asterix/multipoint_mz.shp"),
   ("input-format"="shapefile")
 );

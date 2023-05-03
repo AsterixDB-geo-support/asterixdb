@@ -17,22 +17,11 @@
  * under the License.
  */
 /*
-* Description  : Create an external dataset to read data from shapefile containing Point type records
+* Description  : Test filter pushdown for multipoint type geometry of shapefile.
 * Expected Res : Success
 */
 
-DROP DATAVERSE test IF EXISTS;
-CREATE DATAVERSE test;
+Use test;
 
-USE test;
-
-
-CREATE TYPE PointShapeType as {
-};
-
-CREATE EXTERNAL DATASET PointDataset(PointShapeType) USING hdfs
-(
-  ("hdfs"="hdfs://127.0.0.1:31888"),
-  ("path"="/asterix/points.shp"),
-  ("input-format"="shapefile")
-);
+SELECT id FROM MultipointDataset
+WHERE st_within(g, st_geom_from_text("POLYGON((-2.068 0.088, -1.712 0.08, -1.717 -0.182, -2.038 -0.165, -2.068 0.088))"));
