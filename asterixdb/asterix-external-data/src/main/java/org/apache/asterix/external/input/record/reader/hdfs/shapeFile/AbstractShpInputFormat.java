@@ -28,8 +28,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hyracks.data.std.api.IValueReference;
 
-/**
- */
 abstract class AbstractShpInputFormat<T extends IValueReference>
         extends org.apache.hadoop.mapred.FileInputFormat<Void, T> {
     @Override
@@ -49,7 +47,7 @@ abstract class AbstractShpInputFormat<T extends IValueReference>
 
     @Override
     protected boolean isSplitable(FileSystem fs, Path filename) {
-        //We are not considering splitting shapefile. To-do: create support for shapefile spilit.
+        //We are not considering splitting shapefile. To-do: create support for processing shapefile split.
         return false;
     }
 

@@ -50,13 +50,17 @@ public abstract class AbstractShapeReader<T extends IValueReference> extends Abs
 
     public AbstractShapeReader(InputSplit inputSplit, JobConf conf, Reporter reporter, String requestedFields,
             String filterMBRInfo) throws IOException {
-        //
         if (inputSplit instanceof FileSplit) {
+            /*
+            * if requested fields contains "" or null, that means we need to read both .shp and .dbf files
+            * if requested fields contains {}, that means count(*) has been requested, in this case reading .shx file would be sufficient
+            * if requested fields contains 'g' only, then we only need to read .shp file
+            * other cases: read both .shp and .dbf files
+            */
             if (requestedFields == null || requestedFields.equals("")) {
                 readGeometryField = true;
                 readDBFFields = true;
             } else if (requestedFields.equals("{}")) {
-                // readNumberOfRecordsFromHeaderOnly = true;
                 readShxFile = true;
                 readGeometryField = false;
                 readDBFFields = false;

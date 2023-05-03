@@ -41,9 +41,11 @@ public class DBFReader implements Serializable {
 
     public byte nextDataType() throws IOException {
         byte dataType;
-        //read the first byte of DBF record content
-        // if it is DBFType.DELETED, skip record, and then start reading the next record of the file
-        //if the read byte is DBFType.END, that means end of the file reached.
+        /*
+         * read the first byte of DBF record content
+         * if it is DBFType.DELETED, skip record, and then start reading the next record of the file
+         * if the read byte is DBFType.END, that means end of the file reached.
+        */
         do {
             dataType = m_dataInputStream.readByte();
             if (dataType == DBFType.END) {

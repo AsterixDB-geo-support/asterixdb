@@ -184,8 +184,8 @@ public class ShpReader implements Serializable {
         double ymin = EndianUtils.readSwappedDouble(m_dataInputStream);
         double xmax = EndianUtils.readSwappedDouble(m_dataInputStream);
         double ymax = EndianUtils.readSwappedDouble(m_dataInputStream);
-        /*if minimum bounding rectangle of the record polyline does not overlap with the given filter MBR
-        we are going to skip the entire record geometry*/
+        /* if minimum bounding rectangle of the record polyline does not overlap with the given filter MBR
+        we are going to skip the entire record geometry */
         if (isFilterMBRPushdown) {
             if (!isOverlapped(xmin, ymin, xmax, ymax)) {
                 m_dataInputStream.skipBytes(contentLengthInBytes - 32);
@@ -251,8 +251,8 @@ public class ShpReader implements Serializable {
         double xmax = EndianUtils.readSwappedDouble(m_dataInputStream);
         double ymax = EndianUtils.readSwappedDouble(m_dataInputStream);
 
-        /*if minimum bounding rectangle of the record multipoint does not overlap with the given filter MBR
-        we are going to skip the entire record geometry*/
+        /* if minimum bounding rectangle of the record multipoint does not overlap with the given filter MBR
+        we are going to skip the entire record geometry */
         if (isFilterMBRPushdown) {
             if (!isOverlapped(xmin, ymin, xmax, ymax)) {
                 m_dataInputStream.skipBytes(contentLengthInBytes - 32);

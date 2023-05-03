@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.config.DatasetConfig.DatasetFormat;
 import org.apache.asterix.common.metadata.DataverseName;
@@ -42,10 +43,10 @@ import org.apache.asterix.om.constants.AsterixConstantValue;
 import org.apache.asterix.om.functions.BuiltinFunctions;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.asterix.om.utils.ConstantExpressionUtil;
-import org.apache.asterix.optimizer.rules.pushdown.schema.RootExpectedSchemaNode;
-import org.apache.asterix.runtime.projection.FunctionCallInformation;
 import org.apache.asterix.optimizer.base.AsterixOptimizationContext;
+import org.apache.asterix.optimizer.rules.pushdown.schema.RootExpectedSchemaNode;
 import org.apache.asterix.runtime.projection.DataProjectionFiltrationInfo;
+import org.apache.asterix.runtime.projection.FunctionCallInformation;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.core.algebra.base.ILogicalExpression;
@@ -58,8 +59,8 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IAlgebricksConstantValue;
-import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvironment;
+import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
@@ -100,9 +101,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.WindowOperat
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteResultOperator;
 import org.apache.hyracks.algebricks.core.algebra.visitors.ILogicalOperatorVisitor;
-
 import com.esri.core.geometry.Envelope;
-
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 
@@ -125,7 +124,7 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
     //visitedOperators so we do not visit the same operator twice (in case of REPLICATE)
     private final Set<ILogicalOperator> visitedOperators;
     //coordinates of bounding box of the filter for shapefile dataset
-    private boolean hasFilterPushdown;
+    private boolean hasFilterPushdownForShapefileFormat;
     private double xMin;
     private double yMin;
     private double xMax;
@@ -142,7 +141,7 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
         filterPushdown = new ExpressionValueFilterPushdown(builder,
                 context.getPhysicalOptimizationConfig().isColumnFilterEnabled());
         visitedOperators = new HashSet<>();
-        hasFilterPushdown = false;
+        hasFilterPushdownForShapefileFormat = false;
     }
 
     public void finish() {
@@ -155,8 +154,12 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
                 DataSourceScanOperator scan = (DataSourceScanOperator) scanOp;
                 scan.setDatasetProjectionInfo(builder.createProjectionInfo(entry.getKey(), filterPaths,
                         filterExpression, sourceInformationMap));
-                if (hasFilterPushdown) {
-                    DataProjectionFiltrationInfo projectionInfo = (DataProjectionFiltrationInfo) ((DataSourceScanOperator) scanOp).getDatasetProjectionInfo();
+                /*
+                Store the MBR of the filter into DataProjectioninfo for shapefile format dataset
+                 */
+                if (hasFilterPushdownForShapefileFormat) {
+                    DataProjectionFiltrationInfo projectionInfo =
+                            (DataProjectionFiltrationInfo) ((DataSourceScanOperator) scanOp).getDatasetProjectionInfo();
                     projectionInfo.setFilterMBR(xMin, yMin, xMax, yMax);
                 }
             } else {
@@ -444,6 +447,14 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
     @Override
     public Void visitSelectOperator(SelectOperator op, Void arg) throws AlgebricksException {
         visitInputs(op);
+        /*
+         * if the dataset is in shapefile format: we visit the condition of the select operator
+         * so far the following two cases have been handled for simplicity. To-do: more complex condition
+         * Case 1: filter condition includes simple function call: "st-intersects",
+                    "st-contains", "st-crosses", "st-equals", "st-overlaps", "st-touches", "st-within"
+         * Case 2: filter condition involves "and" operation, and any of the functions mentioned in Case 1
+                    are invoked as an operand of "and"
+         */
         if (isShapeFileFormat()) {
             ArrayList<String> acceptedFunctionNames = new ArrayList<String>(Arrays.asList("st-intersects",
                     "st-contains", "st-crosses", "st-equals", "st-overlaps", "st-touches", "st-within"));
@@ -478,7 +489,7 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
                             if (value instanceof AsterixConstantValue) {
                                 IAObject constantObject = ((AsterixConstantValue) value).getObject();
                                 if (constantObject instanceof AGeometry) {
-                                    hasFilterPushdown = true;
+                                    hasFilterPushdownForShapefileFormat = true;
                                     Envelope record = new Envelope();
                                     ((AGeometry) constantObject).getGeometry().getEsriGeometry().queryEnvelope(record);
                                     xMin = record.getXMin();
@@ -697,8 +708,7 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
                 DataverseName dataverse = dataSource.getId().getDataverseName();
                 String dataSetName = dataSource.getId().getDatasourceName();
                 Dataset dataset = metadataProvider.findDataset(dataverse, dataSetName);
-                if (ExternalDataUtils
-                        .isShapefileFormat(((ExternalDatasetDetails) dataset.getDatasetDetails()).getProperties())) {
+                if (ExternalDataUtils.isShapefileFormat(((ExternalDatasetDetails) dataset.getDatasetDetails()).getProperties())) {
                     return true;
                 }
             }

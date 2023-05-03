@@ -56,7 +56,9 @@ import com.esri.core.geometry.ogc.OGCPolygon;
 
 public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable> {
     private ARecordType recordType;
+    /* list of fields requested to project in the SELECT statement */
     private String requestedFields;
+    /* information about the MBR of the geometry on which the filter would be applied */
     private String filterMBRInfo;
 
     @Override
@@ -83,7 +85,7 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
     public void setFilterMBRInfo(String filterMBRInfo) {
         this.filterMBRInfo = filterMBRInfo;
     }
-
+    /* */
     private static final class ShapeFileReader extends AbstractShapeReader<VoidPointable> {
         private final RecordBuilder builder;
         private final ARecordType recordType;
@@ -94,14 +96,16 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
             this.recordType = recordType;
             builder = new RecordBuilder();
         }
-
         @Override
         public boolean next(Void key, VoidPointable value) throws IOException {
-            //initialize a record builder which will be used to parse record of the shapefile in ADM format.
+            /* initialize a record builder which will be used to parse record of the shapefile in ADM format. */
             builder.init();
+            /* set the record type of the builder to the defined record type */
             builder.reset(this.recordType);
-            //if the query select count(*), we do not read the shp file, we can get the record counts from the index file(.shx)
-            //index(.shx) file contains record offset for each record of the corresponding shape(.shp) file
+            /*
+            * if the query select count(*) only, we do not read the shp file, we can get the record counts from the index file(.shx)
+            * index(.shx) file contains record offset for each record of the corresponding shape(.shp) file
+            */
             if (readShxFile) {
                 boolean hasMore = m_shxReader.hasMore();
                 if (!hasMore)
@@ -122,8 +126,11 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                 if (!m_shpReader.hasMore())
                     return false;
                 int fieldIndex;
+                /*
+                * hasReadFully is a boolean flag to indicate whether the current geometry record of the .shp file has been
+                * read or not.
+                */
                 boolean hasReadFully = true;
-
                 OGCGeometry geometry = null;
                 m_shpReader.readRecordHeader();
                 switch (m_shpReader.getShapeType()) {
@@ -171,7 +178,12 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                     default:
                         throw new IllegalStateException("Unexpected value: " + m_shpReader.getShapeType());
                 }
-
+                /*
+                * if the record geometry is read fully, then we are going add the 'g' field and its value
+                *  to the ADM record builder if not declared in the schema
+                * if 'g' field is already defined in the schema, then we just need to get the field index from
+                * the builder, and set the value
+                 */
                 if (hasReadFully) {
                     String fieldName = "g";
                     fieldIndex = recordType.getFieldIndex(fieldName);
@@ -196,8 +208,12 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                         } else
                             throw new IllegalStateException("Defined type and Parsed Type do not match");
                     }
-                } else {
-                    //if geometry field is not read from the shapefile, the corresponding DBF record need to be skipped
+                }
+                /*
+                 * if geometry field is not read from the shapefile, the corresponding DBF record need to be skipped
+                 * return an ADM record of BuiltInType.Anull type
+                 */
+                else {
                     if (readDBFFields)
                         m_dbfReader.skipBytes(m_dbfReader.getRecordLength());
                     ArrayBackedValueStorage valueContainer = new ArrayBackedValueStorage();
@@ -207,13 +223,8 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                     return true;
                 }
             }
-
-            //   Map<String, Object> map=m_dbfReader.readRecordAsMap();
             //........ DBF File reading ............
             if (readDBFFields) {
-                boolean hasMore = m_dbfReader.hasMore();
-                if (!hasMore)
-                    return false;
                 final byte dataType = m_dbfReader.nextDataType();
                 if (dataType != DBFType.END) {
                     List<DBFField> fields = m_dbfReader.getFields();
@@ -307,9 +318,8 @@ public class OGCGeometryInputFormat extends AbstractShpInputFormat<VoidPointable
                 } else {
                     return false;
                 }
-
             }
-
+            /* Parse the record builder to VoidPointable object value if record builder successfully reach this point */
             ArrayBackedValueStorage valueContainer = new ArrayBackedValueStorage();
             builder.write(valueContainer.getDataOutput(), true);
             value.set(valueContainer);

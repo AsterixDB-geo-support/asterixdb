@@ -131,6 +131,7 @@ public class GenericAdapterFactory implements ITypedAdapterFactory {
         ICcApplicationContext appCtx = (ICcApplicationContext) serviceContext.getApplicationContext();
         ExternalDataUtils.validateDataSourceParameters(configuration);
         dataSourceFactory = createExternalDataSourceFactory(configuration);
+        //set the record type attribute of HDFSDataSourceFactory class if the file input format is shapefile.
         if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT)
                 .equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
             if (dataSourceFactory instanceof HDFSDataSourceFactory) {

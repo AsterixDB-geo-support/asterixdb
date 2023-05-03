@@ -26,8 +26,6 @@ import java.util.List;
 
 import org.apache.commons.io.EndianUtils;
 
-/**
- */
 public class DBFHeader implements Serializable {
 
     private byte signature; /* 0     */

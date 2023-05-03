@@ -800,11 +800,12 @@ public class ExternalDataUtils {
                 || ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat);
     }
 
-    public static void setExternalDataProjectionInfo(DataProjectionFiltrationInfo projectionInfo, Map<String, String> properties)
-            throws IOException {
+    public static void setExternalDataProjectionInfo(DataProjectionFiltrationInfo projectionInfo,
+            Map<String, String> properties) throws IOException {
         if (properties.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
             ARecordType expectedType = projectionInfo.getProjectionInfo();
-            if (expectedType == DataProjectionFiltrationInfo.EMPTY_TYPE || expectedType == DataProjectionFiltrationInfo.ALL_FIELDS_TYPE)
+            if (expectedType == DataProjectionFiltrationInfo.EMPTY_TYPE
+                    || expectedType == DataProjectionFiltrationInfo.ALL_FIELDS_TYPE)
                 properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS, expectedType.getTypeName());
             else {
                 properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS,

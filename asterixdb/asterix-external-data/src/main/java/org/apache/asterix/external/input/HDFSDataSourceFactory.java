@@ -258,7 +258,8 @@ public class HDFSDataSourceFactory implements IRecordReaderFactory<Object>, IExt
     }
 
     private static IRecordReader<? extends Object> createRecordReader(Map<String, String> configuration, boolean[] read,
-            InputSplit[] inputSplits, String[] readSchedule, String nodeName, JobConf conf, IWarningCollector warningCollector, ARecordType recordType) {
+            InputSplit[] inputSplits, String[] readSchedule, String nodeName, JobConf conf,
+            IWarningCollector warningCollector, ARecordType recordType) {
         if (configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT.trim())
                 .equals(ExternalDataConstants.INPUT_FORMAT_PARQUET)) {
             return new ParquetFileRecordReader<>(read, inputSplits, readSchedule, nodeName, conf, warningCollector);

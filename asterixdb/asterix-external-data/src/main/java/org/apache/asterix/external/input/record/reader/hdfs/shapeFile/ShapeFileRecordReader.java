@@ -59,7 +59,9 @@ public class ShapeFileRecordReader<V extends IValueReference> extends AbstractHD
     @Override
     public IRawRecord<V> next() throws IOException {
         if (value instanceof VoidPointable) {
-            //check if the read value is null or not. If ANull then it has only the typeTag in the serialized form
+            /*
+             check if the read value is null or not. If ANull then it has only the typeTag in the ADM format
+            */
             if (value.getLength() <= 1)
                 return null;
         }
