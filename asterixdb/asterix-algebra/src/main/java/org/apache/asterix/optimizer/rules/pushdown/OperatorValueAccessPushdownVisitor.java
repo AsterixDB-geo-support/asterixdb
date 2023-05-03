@@ -99,7 +99,6 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.UnnestMapOpe
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.UnnestOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WindowOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteOperator;
-import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteResultOperator;
 import org.apache.hyracks.algebricks.core.algebra.visitors.ILogicalOperatorVisitor;
 import com.esri.core.geometry.Envelope;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -653,12 +652,6 @@ public class OperatorValueAccessPushdownVisitor implements ILogicalOperatorVisit
 
     @Override
     public Void visitDistributeResultOperator(DistributeResultOperator op, Void arg) throws AlgebricksException {
-        visitInputs(op);
-        return null;
-    }
-
-    @Override
-    public Void visitWriteResultOperator(WriteResultOperator op, Void arg) throws AlgebricksException {
         visitInputs(op);
         return null;
     }
