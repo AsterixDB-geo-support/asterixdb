@@ -22,7 +22,7 @@ import java.io.IOException;
 
 import org.apache.asterix.external.api.IRecordReader;
 import org.apache.asterix.external.dataflow.AbstractFeedDataFlowController;
-import org.apache.asterix.external.util.FeedLogManager;
+import org.apache.asterix.external.util.IFeedLogManager;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
 
 public abstract class FunctionReader implements IRecordReader<char[]> {
@@ -43,7 +43,7 @@ public abstract class FunctionReader implements IRecordReader<char[]> {
     }
 
     @Override
-    public void setFeedLogManager(FeedLogManager feedLogManager) throws HyracksDataException {
+    public void setFeedLogManager(IFeedLogManager feedLogManager) throws HyracksDataException {
         throw new UnsupportedOperationException();
     }
 

@@ -37,20 +37,24 @@ public class DataProjectionFiltrationInfo implements IProjectionFiltrationInfo<A
     public static final ARecordType ALL_FIELDS_TYPE = createType("");
     //Default open record type when requesting none of the fields
     public static final ARecordType EMPTY_TYPE = createType("{}");
+    public static final String FILTER_VALUE_ACCESSOR = "filter-value-accessor";
 
     private final ARecordType root;
     private final Map<String, FunctionCallInformation> functionCallInfoMap;
     //For shapefile scan, information about MBR of the filter condition geometry
     private String filterMBR;
-    private final Map<ILogicalExpression, ARecordType> expressionToPath;
+    private final Map<ILogicalExpression, ARecordType> normalizedPaths;
+    private final Map<ILogicalExpression, ARecordType> actualPaths;
     private final ILogicalExpression filterExpression;
 
     public DataProjectionFiltrationInfo(ARecordType root, Map<String, FunctionCallInformation> sourceInformationMap,
-            Map<ILogicalExpression, ARecordType> expressionToPath, ILogicalExpression filterExpression) {
+            Map<ILogicalExpression, ARecordType> normalizedPaths, Map<ILogicalExpression, ARecordType> actualPaths,
+            ILogicalExpression filterExpression) {
         this.root = root;
         this.functionCallInfoMap = sourceInformationMap;
         this.filterMBR = null;
-        this.expressionToPath = expressionToPath;
+        this.normalizedPaths = normalizedPaths;
+        this.actualPaths = actualPaths;
         this.filterExpression = filterExpression;
     }
 
@@ -63,7 +67,8 @@ public class DataProjectionFiltrationInfo implements IProjectionFiltrationInfo<A
             root = other.root.deepCopy(other.root);
         }
         functionCallInfoMap = new HashMap<>(other.functionCallInfoMap);
-        expressionToPath = new HashMap<>(other.expressionToPath);
+        normalizedPaths = new HashMap<>(other.normalizedPaths);
+        actualPaths = new HashMap<>(other.actualPaths);
         filterExpression = other.filterExpression;
     }
 
@@ -86,8 +91,12 @@ public class DataProjectionFiltrationInfo implements IProjectionFiltrationInfo<A
         return functionCallInfoMap;
     }
 
-    public Map<ILogicalExpression, ARecordType> getExpressionToPath() {
-        return expressionToPath;
+    public Map<ILogicalExpression, ARecordType> getNormalizedPaths() {
+        return normalizedPaths;
+    }
+
+    public Map<ILogicalExpression, ARecordType> getActualPaths() {
+        return actualPaths;
     }
 
     @Override
@@ -101,7 +110,7 @@ public class DataProjectionFiltrationInfo implements IProjectionFiltrationInfo<A
         DataProjectionFiltrationInfo otherInfo = (DataProjectionFiltrationInfo) o;
         return root.deepEqual(otherInfo.root) && Objects.equals(functionCallInfoMap, otherInfo.functionCallInfoMap)
                 && Objects.equals(filterExpression, otherInfo.filterExpression)
-                && Objects.equals(expressionToPath, otherInfo.expressionToPath);
+                && Objects.equals(normalizedPaths, otherInfo.normalizedPaths);
     }
 
     @Override

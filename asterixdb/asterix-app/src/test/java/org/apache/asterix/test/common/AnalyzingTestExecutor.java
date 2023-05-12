@@ -40,8 +40,7 @@ public class AnalyzingTestExecutor extends TestExecutor {
             Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
 
     public AnalyzingTestExecutor() {
-        super();
-        super.deltaPath = "results_cbo";
+        super("results_cbo");
     }
 
     @Override
@@ -69,6 +68,7 @@ public class AnalyzingTestExecutor extends TestExecutor {
                 analyzeStmt.append(dv);
             }
             analyzeStmt.append(ds);
+            analyzeStmt.append(" WITH {\"sample-seed\": \"1000\"}");
             analyzeStmt.append(";");
             InputStream resultStream = executeQueryService(analyzeStmt.toString(), getQueryServiceUri(SQLPP),
                     TestCaseContext.OutputFormat.CLEAN_JSON);
