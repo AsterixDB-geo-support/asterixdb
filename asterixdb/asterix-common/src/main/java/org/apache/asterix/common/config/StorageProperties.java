@@ -65,7 +65,7 @@ public class StorageProperties extends AbstractProperties {
         STORAGE_GLOBAL_CLEANUP(BOOLEAN, true),
         STORAGE_GLOBAL_CLEANUP_TIMEOUT(POSITIVE_INTEGER, (int) TimeUnit.MINUTES.toSeconds(10)),
         STORAGE_COLUMN_MAX_TUPLE_COUNT(NONNEGATIVE_INTEGER, 15000),
-        STORAGE_COLUMN_FREE_SPACE_TOLERANCE(DOUBLE, 0.15),
+        STORAGE_COLUMN_FREE_SPACE_TOLERANCE(DOUBLE, 0.15d),
         STORAGE_FORMAT(STRING, "row"),
         STORAGE_PARTITIONING(STRING, "dynamic"),
         STORAGE_PARTITIONS_COUNT(INTEGER, 8);
@@ -81,6 +81,7 @@ public class StorageProperties extends AbstractProperties {
         @Override
         public Section section() {
             switch (this) {
+                case STORAGE_BUFFERCACHE_PAGESIZE:
                 case STORAGE_COMPRESSION_BLOCK:
                 case STORAGE_LSM_BLOOMFILTER_FALSEPOSITIVERATE:
                 case STORAGE_GLOBAL_CLEANUP:
@@ -295,8 +296,8 @@ public class StorageProperties extends AbstractProperties {
         return accessor.getInt(Option.STORAGE_COLUMN_MAX_TUPLE_COUNT);
     }
 
-    public float getColumnFreeSpaceTolerance() {
-        return (float) accessor.getDouble(Option.STORAGE_COLUMN_FREE_SPACE_TOLERANCE);
+    public double getColumnFreeSpaceTolerance() {
+        return accessor.getDouble(Option.STORAGE_COLUMN_FREE_SPACE_TOLERANCE);
     }
 
     public String getStorageFormat() {

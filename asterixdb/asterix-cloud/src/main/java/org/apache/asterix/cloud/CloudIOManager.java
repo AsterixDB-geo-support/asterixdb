@@ -18,7 +18,8 @@
  */
 package org.apache.asterix.cloud;
 
-import static org.apache.asterix.common.utils.StorageConstants.*;
+import static org.apache.asterix.common.utils.StorageConstants.PARTITION_DIR_PREFIX;
+import static org.apache.asterix.common.utils.StorageConstants.STORAGE_ROOT_DIR_NAME;
 
 import java.io.File;
 import java.io.FilenameFilter;
@@ -151,6 +152,7 @@ public class CloudIOManager extends IOManager {
         super.close(fHandle);
     }
 
+    // TODO This method should not do any syncing. It simply should list the files
     @Override
     public Set<FileReference> list(FileReference dir, FilenameFilter filter) throws HyracksDataException {
         Set<String> cloudFiles = cloudClient.listObjects(bucket, dir.getRelativePath(), filter);
@@ -215,11 +217,19 @@ public class CloudIOManager extends IOManager {
     }
 
     @Override
-    public long getSize(IFileHandle fileHandle) {
+    public long getSize(IFileHandle fileHandle) throws HyracksDataException {
         if (!fileHandle.getFileReference().getFile().exists()) {
             return cloudClient.getObjectSize(bucket, fileHandle.getFileReference().getRelativePath());
         }
         return super.getSize(fileHandle);
+    }
+
+    @Override
+    public long getSize(FileReference fileReference) throws HyracksDataException {
+        if (!fileReference.getFile().exists()) {
+            return cloudClient.getObjectSize(bucket, fileReference.getRelativePath());
+        }
+        return super.getSize(fileReference);
     }
 
     @Override
@@ -255,7 +265,7 @@ public class CloudIOManager extends IOManager {
     }
 
     @Override
-    public boolean exists(FileReference fileRef) {
+    public boolean exists(FileReference fileRef) throws HyracksDataException {
         // Check if the file exists locally first as newly created files (i.e., they are empty) are not stored in cloud storage
         return fileRef.getFile().exists() || cloudClient.exists(bucket, fileRef.getRelativePath());
     }
