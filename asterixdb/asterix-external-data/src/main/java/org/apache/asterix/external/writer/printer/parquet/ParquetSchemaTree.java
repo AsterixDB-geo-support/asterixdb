@@ -115,22 +115,6 @@ public class ParquetSchemaTree {
             }
         }
 
-        public boolean isStrictParentOf(ATypeTag childTypeTag) {
-            if (!isHierarchical || !AsterixParquetTypeMap.HIERARCHIAL_TYPES.containsKey(childTypeTag)) {
-                return false;
-            }
-            return AsterixParquetTypeMap.HIERARCHIAL_TYPES.get(this.typeTag) > AsterixParquetTypeMap.HIERARCHIAL_TYPES
-                    .get(childTypeTag);
-        }
-
-        public boolean isStrictChildOf(ATypeTag parentTypeTag) {
-            if (!isHierarchical || !AsterixParquetTypeMap.HIERARCHIAL_TYPES.containsKey(parentTypeTag)) {
-                return false;
-            }
-            return AsterixParquetTypeMap.HIERARCHIAL_TYPES.get(this.typeTag) < AsterixParquetTypeMap.HIERARCHIAL_TYPES
-                    .get(parentTypeTag);
-        }
-
         public void coalesce(ATypeTag typeTag) {
             if (!isCompatibleWith(typeTag) || !isHierarchical) {
                 return;
@@ -144,10 +128,6 @@ public class ParquetSchemaTree {
 
         public PrimitiveType.PrimitiveTypeName getPrimitiveTypeName() {
             return AsterixParquetTypeMap.PRIMITIVE_TYPE_NAME_MAP.get(typeTag);
-        }
-
-        public ATypeTag getTypeTag() {
-            return typeTag;
         }
     }
 

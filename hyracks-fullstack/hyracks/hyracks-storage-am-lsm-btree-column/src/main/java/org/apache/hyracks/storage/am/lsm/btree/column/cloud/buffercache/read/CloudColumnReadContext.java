@@ -137,7 +137,8 @@ public final class CloudColumnReadContext implements IColumnReadContext {
             return;
         }
 
-        columnRanges.pageZeroSegmentsInit(leafFrame);
+        // pin the required page segments
+        //        mergedPageRanges.clear();
         int pageZeroId = leafFrame.getPageId();
         // Pinning all the segments of the page zero
         // as the column eviction logic is based on the length of the columns which
@@ -157,7 +158,7 @@ public final class CloudColumnReadContext implements IColumnReadContext {
             return;
         }
 
-        columnRanges.reset(leafFrame, projectedColumns, plan, cloudOnlyColumns, true);
+        columnRanges.reset(leafFrame, projectedColumns, plan, cloudOnlyColumns);
         int pageZeroId = leafFrame.getPageId();
         int numberOfPageZeroSegments = leafFrame.getNumberOfPageZeroSegments();
 
@@ -219,6 +220,36 @@ public final class CloudColumnReadContext implements IColumnReadContext {
 
         // pin the calculated pageRanges
         mergedPageRanges.pin(columnCtx, bufferCache, fileId, pageZeroId);
+    }
+
+    private void mergePageZeroSegmentRanges(BitSet pageZeroSegmentRanges) {
+        // Since the 0th segment is already pinned, we can skip it
+        pageZeroSegmentRanges.clear(0);
+        if (pageZeroSegmentRanges.cardinality() == 0) {
+            // No page zero segments, nothing to merge
+            return;
+        }
+
+        int start = -1;
+        int prev = -1;
+
+        int current = pageZeroSegmentRanges.nextSetBit(0);
+        while (current >= 0) {
+            if (start == -1) {
+                // Start of a new range
+                start = current;
+            } else if (current != prev + 1) {
+                // Discontinuous: close the current range
+                mergedPageRanges.addRange(start, prev);
+                start = current;
+            }
+
+            prev = current;
+            current = pageZeroSegmentRanges.nextSetBit(current + 1);
+        }
+
+        // Close the final range
+        mergedPageRanges.addRange(start, prev);
     }
 
     @Override

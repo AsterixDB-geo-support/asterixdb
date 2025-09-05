@@ -58,6 +58,11 @@
         <output-dir compare="Text">parquet</output-dir>
       </compilation-unit>
     </test-case>
+      <test-case FilePath="hdfs">
+          <compilation-unit name="shapefile">
+              <output-dir compare="Text">shapefile</output-dir>
+          </compilation-unit>
+      </test-case>
     <!-- ASTERIXDB-3468: iceberg tests failing due to unsupported version
       <test-case FilePath="hdfs">
           <compilation-unit name="iceberg">
@@ -261,8 +266,6 @@
         <expected-error>ASX0072: Parquet does not support arrays containing mixed data types</expected-error>
         <expected-error>ASX0072: Parquet does not support arrays containing mixed data types</expected-error>
         <expected-error>ASX0072: Parquet does not support arrays containing mixed data types</expected-error>
-        <expected-error>ASX0072: Parquet does not support arrays containing mixed data types</expected-error>
-        <expected-error>HYR0132: Extra field in the result, field 'c' does not exist at 'root' in the schema</expected-error>
         <expected-error>ASX0072: Parquet does not support arrays containing mixed data types</expected-error>
         <source-location>false</source-location>
       </compilation-unit>

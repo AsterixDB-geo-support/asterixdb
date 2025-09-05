@@ -23,6 +23,8 @@ import static org.apache.asterix.optimizer.rules.am.AccessMethodJobGenParams.DAT
 import static org.apache.asterix.optimizer.rules.am.AccessMethodJobGenParams.DATAVERSE_NAME_POS;
 import static org.apache.asterix.optimizer.rules.am.AccessMethodJobGenParams.INDEX_NAME_POS;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -31,16 +33,23 @@ import java.util.Set;
 import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.config.DatasetConfig.DatasetFormat;
 import org.apache.asterix.common.metadata.DataverseName;
+import org.apache.asterix.external.util.ExternalDataUtils;
 import org.apache.asterix.metadata.declared.DataSource;
 import org.apache.asterix.metadata.declared.DataSourceId;
 import org.apache.asterix.metadata.declared.DatasetDataSource;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Dataset;
+import org.apache.asterix.metadata.entities.ExternalDatasetDetails;
+import org.apache.asterix.om.base.AGeometry;
+import org.apache.asterix.om.base.IAObject;
+import org.apache.asterix.om.constants.AsterixConstantValue;
 import org.apache.asterix.om.functions.BuiltinFunctions;
 import org.apache.asterix.om.utils.ConstantExpressionUtil;
+import org.apache.asterix.optimizer.base.AsterixOptimizationContext;
 import org.apache.asterix.optimizer.rules.pushdown.PushdownContext;
 import org.apache.asterix.optimizer.rules.pushdown.descriptor.ScanDefineDescriptor;
 import org.apache.asterix.optimizer.rules.pushdown.schema.RootExpectedSchemaNode;
+import org.apache.asterix.runtime.projection.ExternalDatasetProjectionFiltrationInfo;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.common.utils.Triple;
@@ -52,6 +61,9 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalExpressionTag;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalOperatorTag;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCallExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.IAlgebricksConstantValue;
+import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.VariableReferenceExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractScanOperator;
@@ -93,6 +105,10 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.UnnestOperat
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WindowOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.WriteOperator;
 import org.apache.hyracks.algebricks.core.algebra.visitors.ILogicalOperatorVisitor;
+import org.locationtech.jts.geom.Envelope;
+
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
 
 /**
  * This visitor visits the entire plan and tries to build the information of the required values from all dataset
@@ -103,12 +119,19 @@ public class PushdownOperatorVisitor implements ILogicalOperatorVisitor<Void, Vo
     private final IOptimizationContext context;
     private final DefUseChainComputerVisitor defUseComputer;
     private final Set<ILogicalOperator> visitedOperators;
+    //coordinates of bounding box of the filter for shapefile dataset
+    private boolean hasFilterPushdownForShapefileFormat;
+    private double xMin;
+    private double yMin;
+    private double xMax;
+    private double yMax;
 
     public PushdownOperatorVisitor(PushdownContext pushdownContext, IOptimizationContext context) {
         this.pushdownContext = pushdownContext;
         this.context = context;
         defUseComputer = new DefUseChainComputerVisitor(pushdownContext);
         visitedOperators = new HashSet<>();
+        hasFilterPushdownForShapefileFormat = false;
     }
 
     /**
@@ -305,6 +328,15 @@ public class PushdownOperatorVisitor implements ILogicalOperatorVisitor<Void, Vo
             dataSource = (DataSource) scan.getDataSource();
             variables = scan.getVariables();
             selectCondition = scan.getSelectCondition();
+            /*
+                Store the MBR of the filter into DataProjectioninfo for shapefile format dataset
+                */
+            if (hasFilterPushdownForShapefileFormat) {
+                ExternalDatasetProjectionFiltrationInfo projectionInfo =
+                        (ExternalDatasetProjectionFiltrationInfo) ((DataSourceScanOperator) inputOp)
+                                .getProjectionFiltrationInfo();
+                projectionInfo.setFilterMBR(xMin, yMin, xMax, yMax);
+            }
         } else {
             UnnestMapOperator unnest = (UnnestMapOperator) inputOp;
             dataSource = getDataSourceFromUnnestMapOperator(unnest);
@@ -382,6 +414,62 @@ public class PushdownOperatorVisitor implements ILogicalOperatorVisitor<Void, Vo
     @Override
     public Void visitSelectOperator(SelectOperator op, Void arg) throws AlgebricksException {
         visitInputs(op);
+        /*
+         * if the dataset is in shapefile format: we visit the condition of the select operator
+         * so far the following two cases have been handled for simplicity. To-do: more complex condition
+         * Case 1: filter condition includes simple function call: "st-intersects",
+                    "st-contains", "st-crosses", "st-equals", "st-overlaps", "st-touches", "st-within"
+         * Case 2: filter condition involves "and" operation, and any of the functions mentioned in Case 1
+                    are invoked as an operand of "and"
+         */
+        if (isShapeFileFormat()) {
+            ArrayList<String> acceptedFunctionNames = new ArrayList<String>(Arrays.asList("st-intersects",
+                    "st-contains", "st-crosses", "st-equals", "st-overlaps", "st-touches", "st-within"));
+            ILogicalExpression logicalExpression = op.getCondition().getValue();
+            if (logicalExpression instanceof ScalarFunctionCallExpression) {
+                ScalarFunctionCallExpression predicateExpression = null;
+                String functionName =
+                        ((ScalarFunctionCallExpression) logicalExpression).getFunctionIdentifier().getName();
+                if (functionName.equals("and")) {
+                    List<Mutable<ILogicalExpression>> arguments =
+                            ((ScalarFunctionCallExpression) logicalExpression).getArguments();
+                    for (Mutable<ILogicalExpression> e : arguments) {
+                        ILogicalExpression argument = e.getValue();
+                        if (argument instanceof ScalarFunctionCallExpression) {
+                            if (acceptedFunctionNames.contains(
+                                    ((ScalarFunctionCallExpression) argument).getFunctionIdentifier().getName())) {
+                                predicateExpression = (ScalarFunctionCallExpression) argument;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    if (acceptedFunctionNames.contains(functionName))
+                        predicateExpression = (ScalarFunctionCallExpression) logicalExpression;
+                }
+                if (predicateExpression != null) {
+                    List<Mutable<ILogicalExpression>> arguments = predicateExpression.getArguments();
+                    for (Mutable<ILogicalExpression> e : arguments) {
+                        ILogicalExpression argument = e.getValue();
+                        if (argument instanceof ConstantExpression) {
+                            IAlgebricksConstantValue value = ((ConstantExpression) argument).getValue();
+                            if (value instanceof AsterixConstantValue) {
+                                IAObject constantObject = ((AsterixConstantValue) value).getObject();
+                                if (constantObject instanceof AGeometry) {
+                                    hasFilterPushdownForShapefileFormat = true;
+                                    Envelope envelope =
+                                            ((AGeometry) constantObject).getGeometry().getEnvelopeInternal();
+                                    xMin = envelope.getMinX();
+                                    yMin = envelope.getMinY();
+                                    xMax = envelope.getMaxX();
+                                    yMax = envelope.getMaxY();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return null;
     }
 
@@ -564,5 +652,24 @@ public class PushdownOperatorVisitor implements ILogicalOperatorVisitor<Void, Vo
 
     private void visitInputs(ILogicalOperator op) throws AlgebricksException {
         visitInputs(op, null);
+    }
+
+    private boolean isShapeFileFormat() throws AlgebricksException {
+        ObjectSet<Int2ObjectMap.Entry<Set<DataSource>>> entrySet =
+                ((AsterixOptimizationContext) context).getDataSourceMap().int2ObjectEntrySet();
+        MetadataProvider metadataProvider = (MetadataProvider) context.getMetadataProvider();
+        for (Int2ObjectMap.Entry<Set<DataSource>> dataSources : entrySet) {
+            for (DataSource dataSource : dataSources.getValue()) {
+                DataverseName dataverse = dataSource.getId().getDataverseName();
+                String dataSetName = dataSource.getId().getDatasourceName();
+                String database = dataSource.getId().getDatabaseName();
+                Dataset dataset = metadataProvider.findDataset(database, dataverse, dataSetName);
+                if (ExternalDataUtils
+                        .isShapefileFormat(((ExternalDatasetDetails) dataset.getDatasetDetails()).getProperties())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

@@ -136,6 +136,7 @@ public class ExternalDataConstants {
     public static final String KEY_REDACT_WARNINGS = "redact-warnings";
     public static final String KEY_REQUESTED_FIELDS = "requested-fields";
     public static final String KEY_EXTERNAL_SCAN_BUFFER_SIZE = "external-scan-buffer-size";
+    public static final String KEY_FILTER_PUSHDOWN_MBR = "filter-mbr";
 
     public static final String KEY_EMBED_FILTER_VALUES = "embed-filter-values";
 
@@ -177,6 +178,8 @@ public class ExternalDataConstants {
     public static final String HDFS_IO_COMPRESSION_CODECS_KEY = "io.compression.codecs";
     public static final String HDFS_AVRO_IGNORE_INPUTS_WITHOUT_EXTENSION =
             "avro.mapred.ignore.inputs.without.extension";
+    public static final String CLASS_NAME_SHP_INPUT_FORMAT =
+            "org.apache.asterix.external.input.record.reader.hdfs.shapeFile.OGCGeometryInputFormat";
 
     /**
      * input formats aliases
@@ -185,6 +188,7 @@ public class ExternalDataConstants {
     public static final String INPUT_FORMAT_SEQUENCE = "sequence-input-format";
     public static final String INPUT_FORMAT_PARQUET = "parquet-input-format";
     public static final String INPUT_FORMAT_AVRO = "avro-input-format";
+    public static final String INPUT_FORMAT_SHAPE = "shapefile";
 
     public static final String HDFS_BLOCKSIZE = "blocksize";
     public static final String HDFS_REPLICATION = "replication";
@@ -257,13 +261,15 @@ public class ExternalDataConstants {
     public static final String DUMMY_DATAVERSE_NAME = "a.b.c";
     public static final String FORMAT_APACHE_ICEBERG = "apache-iceberg";
     public static final String FORMAT_DELTA = "delta";
+    public static final String FORMAT_SHAPE = "shp";
+
     public static final Set<String> ALL_FORMATS;
     public static final Set<String> TEXTUAL_FORMATS;
 
     static {
         ALL_FORMATS = Set.of(FORMAT_BINARY, FORMAT_ADM, FORMAT_JSON_LOWER_CASE, FORMAT_DELIMITED_TEXT, FORMAT_TWEET,
                 FORMAT_RSS, FORMAT_SEMISTRUCTURED, FORMAT_LINE_SEPARATED, FORMAT_HDFS_WRITABLE, FORMAT_KV, FORMAT_CSV,
-                FORMAT_TSV, FORMAT_PARQUET, FORMAT_AVRO);
+                FORMAT_TSV, FORMAT_PARQUET, FORMAT_AVRO, FORMAT_SHAPE);
         TEXTUAL_FORMATS = Set.of(FORMAT_ADM, FORMAT_JSON_LOWER_CASE, FORMAT_CSV, FORMAT_TSV);
     }
 
@@ -388,8 +394,7 @@ public class ExternalDataConstants {
     static {
         WRITER_SUPPORTED_FORMATS = Set.of(FORMAT_JSON_LOWER_CASE, FORMAT_PARQUET, FORMAT_CSV_LOWER_CASE);
         WRITER_SUPPORTED_ADAPTERS = Set.of(ALIAS_LOCALFS_ADAPTER.toLowerCase(), KEY_ADAPTER_NAME_AWS_S3.toLowerCase(),
-                KEY_ADAPTER_NAME_GCS.toLowerCase(), KEY_ADAPTER_NAME_HDFS.toLowerCase(),
-                KEY_ADAPTER_NAME_AZURE_BLOB.toLowerCase());
+                KEY_ADAPTER_NAME_GCS.toLowerCase(), KEY_ADAPTER_NAME_HDFS.toLowerCase());
         TEXTUAL_WRITER_SUPPORTED_COMPRESSION = Set.of(KEY_COMPRESSION_GZIP);
         PARQUET_WRITER_SUPPORTED_COMPRESSION =
                 Set.of(KEY_COMPRESSION_GZIP, KEY_COMPRESSION_SNAPPY, KEY_COMPRESSION_ZSTD);

@@ -43,6 +43,7 @@ public class ExternalDatasetProjectionFiltrationInfo implements IProjectionFiltr
     protected final ARecordType projectedType;
     protected final ILogicalExpression filterExpression;
     protected final Map<String, FunctionCallInformation> functionCallInfoMap;
+    private String filterMBR;
     protected final boolean embedFilterValues;
     protected final Map<ILogicalExpression, ARecordType> filterPaths;
 
@@ -54,6 +55,7 @@ public class ExternalDatasetProjectionFiltrationInfo implements IProjectionFiltr
         this.filterExpression = filterExpression;
         this.filterPaths = filterPaths;
         this.embedFilterValues = embedFilterValues;
+        this.filterMBR = null;
     }
 
     private ExternalDatasetProjectionFiltrationInfo(ExternalDatasetProjectionFiltrationInfo other) {
@@ -68,6 +70,7 @@ public class ExternalDatasetProjectionFiltrationInfo implements IProjectionFiltr
         filterExpression = cloneExpression(other.filterExpression);
         filterPaths = clonePaths(other.filterPaths);
         embedFilterValues = other.embedFilterValues;
+        filterMBR = other.filterMBR;
     }
 
     @Override
@@ -110,6 +113,14 @@ public class ExternalDatasetProjectionFiltrationInfo implements IProjectionFiltr
 
     public boolean isEmbedFilterValues() {
         return embedFilterValues;
+    }
+
+    public void setFilterMBR(double xMin, double yMin, double xMax, double yMax) {
+        filterMBR = xMin + "," + yMin + "," + xMax + "," + yMax;
+    }
+
+    public String getFilterMBR() {
+        return filterMBR;
     }
 
     @Override

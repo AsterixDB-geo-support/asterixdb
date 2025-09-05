@@ -64,6 +64,7 @@ public class ExternalDatasetTestUtils {
     private static String JSON_DATA_PATH;
     private static String CSV_DATA_PATH;
     private static String TSV_DATA_PATH;
+    private static String SHAPEFILE_DATA_PATH;
 
     // IMPORTANT: The following values must be used in the AWS S3 test case
     // Region, container and definitions
@@ -73,6 +74,7 @@ public class ExternalDatasetTestUtils {
     public static final String MIXED_DEFINITION = "mixed-data/reviews/";
     public static final String PARQUET_DEFINITION = "parquet-data/reviews/";
     public static final String AVRO_DEFINITION = "avro-data/reviews/";
+    public static final String SHAPEFILE_DEFINITION = "shapefile-data/";
 
     // This is used for a test to generate over 1000 number of files
     public static final String OVER_1000_OBJECTS_PATH = "over-1000-objects";
@@ -153,6 +155,14 @@ public class ExternalDatasetTestUtils {
         TSV_DATA_PATH = tsvDataPath;
     }
 
+    public static void setDataPaths(String jsonDataPath, String csvDataPath, String tsvDataPath,
+            String shapefileDataPath) {
+        JSON_DATA_PATH = jsonDataPath;
+        CSV_DATA_PATH = csvDataPath;
+        TSV_DATA_PATH = tsvDataPath;
+        SHAPEFILE_DATA_PATH = shapefileDataPath;
+    }
+
     public static void setUploaders(Uploader playgroundDataLoader, Uploader dynamicPrefixAtStartDataLoader,
             Uploader fixedDataLoader, Uploader mixedDataLoader, Uploader bomFileLoader) {
         ExternalDatasetTestUtils.playgroundDataLoader = playgroundDataLoader;
@@ -207,6 +217,10 @@ public class ExternalDatasetTestUtils {
         LOGGER.info("Adding Delta Table files to the bucket");
         loadDeltaTableFiles();
         LOGGER.info("Delta files added successfully");
+
+        LOGGER.info("Adding Shapefile files to the bucket");
+        loadShapeFiles();
+        LOGGER.info("Shapefile files added successfully");
 
         LOGGER.info("Files added successfully");
     }
@@ -452,6 +466,21 @@ public class ExternalDatasetTestUtils {
         loadDeltaDirectory(generatedDataBasePath, "/timestamp_partitioned_delta_table", PARQUET_FILTER, "delta-data/");
         loadDeltaDirectory(generatedDataBasePath, "/timestamp_partitioned_delta_table/_delta_log", JSON_FILTER,
                 "delta-data/");
+    }
+
+    private static void loadShapeFiles() {
+        String dataBasePath = SHAPEFILE_DATA_PATH;
+        String definition = SHAPEFILE_DEFINITION;
+        String definitionSegment = "";
+
+        FilenameFilter allShapefileFilter =
+                (dir, name) -> name.endsWith(".shp") || name.endsWith(".dbf") || name.endsWith(".shx");
+
+        Collection<File> shapefiles = IoUtil.getMatchingFiles(Paths.get(dataBasePath), allShapefileFilter);
+        for (File file : shapefiles) {
+            String fileName = file.getName();
+            loadData(dataBasePath, "", fileName, definition, definitionSegment, false);
+        }
     }
 
     private static void loadDeltaDirectory(String dataBasePath, String rootPath, FilenameFilter filter,

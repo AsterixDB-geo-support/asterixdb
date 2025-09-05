@@ -55,7 +55,6 @@ public class ProfiledOperatorNodePushable implements IOperatorNodePushable, ISta
 
     @Override
     public void deinitialize() throws HyracksDataException {
-        ProfiledFrameWriter.timeMethod(op::deinitialize, totalTime);
         long ownTime = totalTime.get();
         for (ITimedWriter i : inputs.values()) {
             ownTime += i.getTotalTime();
@@ -63,6 +62,7 @@ public class ProfiledOperatorNodePushable implements IOperatorNodePushable, ISta
         for (ITimedWriter w : outputs.values()) {
             ownTime -= w.getTotalTime();
         }
+        op.deinitialize();
         stats.getTimeCounter().set(ownTime);
     }
 

@@ -89,6 +89,7 @@ public class SqlppHdfsExecutionTest {
     private static final String JSON_DATA_PATH = joinPath("data", "json");
     private static final String CSV_DATA_PATH = joinPath("data", "csv");
     private static final String TSV_DATA_PATH = joinPath("data", "tsv");
+    private static final String SHAPEFILE_DATA_PATH = joinPath("data", "hdfs", "shapefile");
 
     private static final Configuration CONF = new Configuration();
 
@@ -148,7 +149,7 @@ public class SqlppHdfsExecutionTest {
     }
 
     private static void setUpData() {
-        setDataPaths(JSON_DATA_PATH, CSV_DATA_PATH, TSV_DATA_PATH);
+        setDataPaths(JSON_DATA_PATH, CSV_DATA_PATH, TSV_DATA_PATH, SHAPEFILE_DATA_PATH);
         setUploaders(SqlppHdfsExecutionTest::loadPlaygroundData, null, null, null, null);
 
         PREPARE_BUCKET.run();

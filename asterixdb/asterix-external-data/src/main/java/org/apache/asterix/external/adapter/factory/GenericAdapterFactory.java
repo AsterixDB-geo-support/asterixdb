@@ -35,6 +35,7 @@ import org.apache.asterix.external.api.ITypedAdapterFactory;
 import org.apache.asterix.external.dataflow.AbstractFeedDataFlowController;
 import org.apache.asterix.external.dataset.adapter.FeedAdapter;
 import org.apache.asterix.external.dataset.adapter.GenericAdapter;
+import org.apache.asterix.external.input.HDFSDataSourceFactory;
 import org.apache.asterix.external.input.filter.NoOpExternalFilterEvaluatorFactory;
 import org.apache.asterix.external.provider.DataflowControllerProvider;
 import org.apache.asterix.external.provider.DatasourceFactoryProvider;
@@ -141,6 +142,12 @@ public class GenericAdapterFactory implements ITypedAdapterFactory {
         ICcApplicationContext appCtx = (ICcApplicationContext) serviceContext.getApplicationContext();
         ExternalDataUtils.validateDataSourceParameters(configuration);
         dataSourceFactory = createExternalDataSourceFactory(configuration);
+        //set the record type attribute of HDFSDataSourceFactory class if the file input format is shapefile.
+        String inputFormat = configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT);
+        if (inputFormat.equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)
+                && dataSourceFactory instanceof HDFSDataSourceFactory) {
+            ((HDFSDataSourceFactory) dataSourceFactory).setRecordType(recordType);
+        }
         dataSourceFactory.configure(serviceContext, configuration, warningCollector, filterEvaluatorFactory);
         ExternalDataUtils.validateDataParserParameters(configuration);
         dataParserFactory = createDataParserFactory(configuration);

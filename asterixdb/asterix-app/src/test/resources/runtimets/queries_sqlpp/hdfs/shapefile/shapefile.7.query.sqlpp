@@ -1,0 +1,28 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+/*
+* Description  : Test Filter pushdown on external dataset of shapefile format.
+                 The minimum bounding rectangle of the constant polygon inside the st_intersects is pushed down to the data-scan
+* Expected Res : Success
+*/
+
+USE test;
+
+SELECT id FROM PolygonDataset
+where st_intersects(g, st_geom_from_text("POLYGON((-1.50372 -0.8486, -1.50442 -0.07519, -1.48276 -0.07263, -1.48895 -0.08671, -1.50372 -0.8486))"));

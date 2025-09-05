@@ -196,6 +196,8 @@ public class HDFSUtils {
 
     public static String getInputFormatClassName(Map<String, String> configuration) {
         String inputFormatParameter = configuration.get(ExternalDataConstants.KEY_INPUT_FORMAT).trim();
+        LOGGER.debug("HDFSUtils.getInputFormatClassName: input format parameter = {}", inputFormatParameter);
+
         switch (inputFormatParameter) {
             case ExternalDataConstants.INPUT_FORMAT_TEXT:
                 return ExternalDataConstants.CLASS_NAME_TEXT_INPUT_FORMAT;
@@ -205,7 +207,13 @@ public class HDFSUtils {
                 return ExternalDataConstants.CLASS_NAME_PARQUET_INPUT_FORMAT;
             case ExternalDataConstants.INPUT_FORMAT_AVRO:
                 return ExternalDataConstants.CLASS_NAME_AVRO_INPUT_FORMAT;
+            case ExternalDataConstants.INPUT_FORMAT_SHAPE:
+                String className = ExternalDataConstants.CLASS_NAME_SHP_INPUT_FORMAT;
+                LOGGER.debug("HDFSUtils.getInputFormatClassName: detected shapefile format, returning class = {}",
+                        className);
+                return className;
             default:
+                LOGGER.debug("HDFSUtils.getInputFormatClassName: using custom input format = {}", inputFormatParameter);
                 return inputFormatParameter;
         }
     }

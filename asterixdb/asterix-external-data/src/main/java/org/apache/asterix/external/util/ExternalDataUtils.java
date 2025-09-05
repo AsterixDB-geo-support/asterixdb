@@ -72,7 +72,6 @@ import org.apache.asterix.common.library.ILibrary;
 import org.apache.asterix.common.library.ILibraryManager;
 import org.apache.asterix.common.metadata.DataverseName;
 import org.apache.asterix.common.metadata.Namespace;
-import org.apache.asterix.dataflow.data.nontagged.printers.csv.CSVUtils;
 import org.apache.asterix.external.api.IDataParserFactory;
 import org.apache.asterix.external.api.IExternalDataSourceFactory.DataSourceType;
 import org.apache.asterix.external.api.IInputStreamFactory;
@@ -93,6 +92,7 @@ import org.apache.asterix.om.types.AUnionType;
 import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.om.types.IAType;
 import org.apache.asterix.om.types.TypeTagUtil;
+import org.apache.asterix.om.utils.ProjectionFiltrationTypeUtil;
 import org.apache.asterix.runtime.evaluators.common.NumberUtils;
 import org.apache.asterix.runtime.projection.ExternalDatasetProjectionFiltrationInfo;
 import org.apache.asterix.runtime.projection.FunctionCallInformation;
@@ -164,10 +164,6 @@ public class ExternalDataUtils {
         char quote = validateCharOrDefault(configuration, KEY_QUOTE, ExternalDataConstants.DEFAULT_QUOTE.charAt(0));
         validateDelimiterAndQuote(delimiter, quote);
         return quote;
-    }
-
-    public static boolean isQuoteNeeded(Map<String, String> configuration) {
-        return !CSVUtils.NONE.equalsIgnoreCase(configuration.get(KEY_QUOTE));
     }
 
     public static char validateGetEscape(Map<String, String> configuration, String format) throws HyracksDataException {
@@ -491,6 +487,10 @@ public class ExternalDataUtils {
             configuration.put(ExternalDataConstants.KEY_PARSER, ExternalDataConstants.FORMAT_NOOP);
             configuration.put(ExternalDataConstants.KEY_FORMAT, ExternalDataConstants.FORMAT_PARQUET);
         }
+        if (ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat)) {
+            configuration.put(ExternalDataConstants.KEY_PARSER, ExternalDataConstants.FORMAT_NOOP);
+            configuration.put(ExternalDataConstants.KEY_FORMAT, ExternalDataConstants.FORMAT_SHAPE);
+        }
         if (!configuration.containsKey(ExternalDataConstants.KEY_PARSER)
                 && configuration.containsKey(ExternalDataConstants.KEY_FORMAT)) {
             configuration.put(ExternalDataConstants.KEY_PARSER, configuration.get(ExternalDataConstants.KEY_FORMAT));
@@ -695,15 +695,10 @@ public class ExternalDataUtils {
             return defaultValue;
         }
         validateChar(value, key);
-        return CSVUtils.extractSingleChar(value);
-
+        return value.charAt(0);
     }
 
     public static void validateChar(String parameterValue, String parameterName) throws RuntimeDataException {
-        if (parameterName.equals(KEY_QUOTE) && CSVUtils.NONE.equalsIgnoreCase(parameterValue)) {
-            return;
-
-        }
         if (parameterValue.length() != 1) {
             throw new RuntimeDataException(ErrorCode.INVALID_CHAR_LENGTH, parameterValue, parameterName);
         }
@@ -990,7 +985,7 @@ public class ExternalDataUtils {
 
     public static boolean supportsPushdown(Map<String, String> properties) {
         //Currently, only Apache Parquet/Delta table format is supported
-        return isParquetFormat(properties) || isDeltaTable(properties);
+        return isParquetFormat(properties) || isDeltaTable(properties) || isShapefileFormat(properties);
     }
 
     /**
@@ -1019,6 +1014,12 @@ public class ExternalDataUtils {
                 || ExternalDataConstants.FORMAT_PARQUET.equals(properties.get(ExternalDataConstants.KEY_FORMAT));
     }
 
+    public static boolean isShapefileFormat(Map<String, String> properties) {
+        String inputFormat = properties.get(ExternalDataConstants.KEY_INPUT_FORMAT);
+        return ExternalDataConstants.CLASS_NAME_SHP_INPUT_FORMAT.equals(inputFormat)
+                || ExternalDataConstants.INPUT_FORMAT_SHAPE.equals(inputFormat);
+    }
+
     public static void validateAvroTypeAndConfiguration(Map<String, String> properties, ARecordType datasetRecordType)
             throws CompilationException {
         if (isAvroFormat(properties)) {
@@ -1034,6 +1035,18 @@ public class ExternalDataUtils {
 
     public static void setExternalDataProjectionInfo(ExternalDatasetProjectionFiltrationInfo projectionInfo,
             Map<String, String> properties) throws IOException {
+        if (properties.get(ExternalDataConstants.KEY_INPUT_FORMAT).equals(ExternalDataConstants.INPUT_FORMAT_SHAPE)) {
+            ARecordType expectedType = projectionInfo.getProjectedType();
+            if (expectedType == ProjectionFiltrationTypeUtil.EMPTY_TYPE
+                    || expectedType == ProjectionFiltrationTypeUtil.ALL_FIELDS_TYPE)
+                properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS, expectedType.getTypeName());
+            else {
+                properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS,
+                        String.join(",", expectedType.getFieldNames()));
+            }
+            properties.put(ExternalDataConstants.KEY_FILTER_PUSHDOWN_MBR, projectionInfo.getFilterMBR());
+            return;
+        }
         properties.put(ExternalDataConstants.KEY_REQUESTED_FIELDS,
                 serializeExpectedTypeToString(projectionInfo.getProjectedType()));
         properties.put(ExternalDataConstants.KEY_HADOOP_ASTERIX_FUNCTION_CALL_INFORMATION,

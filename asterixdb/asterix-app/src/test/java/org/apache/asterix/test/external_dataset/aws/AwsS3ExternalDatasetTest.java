@@ -266,9 +266,7 @@ public class AwsS3ExternalDatasetTest {
 
         // create the table
         Table table = tables.create(SCHEMA, PartitionSpec.unpartitioned(),
-                ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, FileFormat.PARQUET.name(),
-                        TableProperties.FORMAT_VERSION, "1"),
-                ICEBERG_TABLE_PATH);
+                ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, FileFormat.PARQUET.name()), ICEBERG_TABLE_PATH);
 
         // load test data
         try {
@@ -295,9 +293,8 @@ public class AwsS3ExternalDatasetTest {
         }
 
         // create a table with mix of parquet and avro data files
-        Table mixedDataFormats = tables.create(SCHEMA,
-                PartitionSpec.unpartitioned(), ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT,
-                        FileFormat.PARQUET.name(), TableProperties.FORMAT_VERSION, "1"),
+        Table mixedDataFormats = tables.create(SCHEMA, PartitionSpec.unpartitioned(),
+                ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, FileFormat.PARQUET.name()),
                 ICEBERG_TABLE_PATH_MIXED_DATA_FORMAT);
 
         // load test data
@@ -313,14 +310,14 @@ public class AwsS3ExternalDatasetTest {
         }
 
         // empty table
-        tables.create(SCHEMA, PartitionSpec.unpartitioned(), ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT,
-                FileFormat.PARQUET.name(), TableProperties.FORMAT_VERSION, "1"), ICEBERG_TABLE_PATH_EMPTY);
+        tables.create(SCHEMA, PartitionSpec.unpartitioned(),
+                ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, FileFormat.PARQUET.name()),
+                ICEBERG_TABLE_PATH_EMPTY);
 
         // multiple data files
 
-        Table multipleDataFiles = tables.create(SCHEMA,
-                PartitionSpec.unpartitioned(), ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT,
-                        FileFormat.PARQUET.name(), TableProperties.FORMAT_VERSION, "1"),
+        Table multipleDataFiles = tables.create(SCHEMA, PartitionSpec.unpartitioned(),
+                ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, FileFormat.PARQUET.name()),
                 ICEBERG_TABLE_PATH_MULTIPLE_DATA_FILES);
 
         // load test data
@@ -336,9 +333,8 @@ public class AwsS3ExternalDatasetTest {
         }
 
         // modify data
-        Table modifiedData = tables.create(SCHEMA,
-                PartitionSpec.unpartitioned(), ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT,
-                        FileFormat.PARQUET.name(), TableProperties.FORMAT_VERSION, "1"),
+        Table modifiedData = tables.create(SCHEMA, PartitionSpec.unpartitioned(),
+                ImmutableMap.of(TableProperties.DEFAULT_FILE_FORMAT, FileFormat.PARQUET.name()),
                 ICEBERG_TABLE_PATH_MODIFIED_DATA);
 
         // load test data
